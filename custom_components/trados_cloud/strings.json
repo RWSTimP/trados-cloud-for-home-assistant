@@ -18,11 +18,14 @@
           "region": "API region (eu, us, etc.)",
           "scan_interval": "How often to check for updates (default: 15 minutes)"
         }
+      },
+      "authorize": {
+        "title": "Authorize with Trados",
+        "description": "Click the link below to open the authorization page in a new tab. After authorizing with your Trados credentials, click Submit below to continue."
       }
     },
     "progress": {
-      "authorize_device": "**Action Required: Authorize in Browser**\n\n**Click or copy this link to authorize:**\n{verification_uri}\n\n**User Code:** {user_code}\n\nWaiting for authorization...",
-      "polling": "Waiting for authorization to complete..."
+      "authorize_device": "Waiting for you to complete authorization in your browser..."
     },
     "error": {
       "auth_failed": "Authentication failed. Please check your credentials.",
