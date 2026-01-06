@@ -1,7 +1,9 @@
 """Config flow for Trados Enterprise integration."""
 import asyncio
 from datetime import datetime
+import json
 import logging
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -30,6 +32,20 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _load_defaults() -> dict[str, Any]:
+    """Load default credentials from .credentials.json if it exists."""
+    defaults_file = Path(__file__).parent / ".credentials.json"
+    if defaults_file.exists():
+        try:
+            with open(defaults_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                _LOGGER.debug("Loaded default credentials from %s", defaults_file)
+                return data
+        except (json.JSONDecodeError, OSError) as err:
+            _LOGGER.warning("Failed to load defaults from %s: %s", defaults_file, err)
+    return {}
+
+
 class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Trados Cloud with Device Code auth."""
 
@@ -49,6 +65,7 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._interval: int = 5
         self._api_client: TradosAPIClient | None = None
         self._poll_result: dict[str, Any] | None = None
+        self._defaults: dict[str, Any] = _load_defaults()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -103,13 +120,25 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error: %s", err)
                 errors["base"] = "unknown"
 
-        # Show credential form
+        # Show credential form with defaults from .credentials.json if available
         data_schema = vol.Schema(
             {
-                vol.Required(CONF_CLIENT_ID): str,
-                vol.Required(CONF_CLIENT_SECRET): str,
-                vol.Required(CONF_TENANT_ID): str,
-                vol.Optional(CONF_REGION, default=DEFAULT_REGION): str,
+                vol.Required(
+                    CONF_CLIENT_ID,
+                    default=self._defaults.get("client_id", "")
+                ): str,
+                vol.Required(
+                    CONF_CLIENT_SECRET,
+                    default=self._defaults.get("client_secret", "")
+                ): str,
+                vol.Required(
+                    CONF_TENANT_ID,
+                    default=self._defaults.get("tenant_id", "")
+                ): str,
+                vol.Optional(
+                    CONF_REGION,
+                    default=self._defaults.get("region", DEFAULT_REGION)
+                ): str,
                 vol.Optional(
                     CONF_SCAN_INTERVAL,
                     default=DEFAULT_SCAN_INTERVAL.total_seconds() / 60,
@@ -126,57 +155,65 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_authorize(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show authorization instructions."""
-        if user_input is not None:
-            # User clicked "I have authorized" - start polling
-            return self.async_show_progress(
-                step_id="poll",
-                progress_action="polling",
-                progress_task=asyncio.create_task(self.async_poll_for_token()),
-            )
-        
+        """Show authorization URL and start polling immediately."""
         # Use complete URI if available, otherwise show base URI and code
         auth_url = self._verification_uri_complete or self._verification_uri
+        _LOGGER.info("Authorization URL: %s", auth_url)
+        _LOGGER.info("Please open this URL in your browser to authorize")
         
-        # Show authorization form with instructions
-        return self.async_external_step(
+        # Start polling immediately with progress UI
+        _LOGGER.debug("Starting polling with progress UI")
+        return self.async_show_progress(
             step_id="authorize",
-            url=auth_url,
+            progress_action="authorize_device",
+            description_placeholders={
+                "verification_uri": auth_url,
+                "user_code": self._user_code or "(included in link)",
+            },
+            progress_task=asyncio.create_task(self.async_poll_for_token()),
         )
 
     async def async_poll_for_token(self) -> FlowResult:
         """Background task to poll for device authorization."""
         max_attempts = 60  # 5 minutes with 5 second intervals
+        _LOGGER.debug("Starting device code polling (max %s attempts)", max_attempts)
         
         for attempt in range(max_attempts):
+            _LOGGER.debug("Poll attempt %s/%s (interval: %ss)", attempt + 1, max_attempts, self._interval)
             try:
                 result = await self._api_client.poll_device_token(self._device_code)
                 
                 if result["status"] == "authorized":
                     # Store token info for finish step
+                    _LOGGER.info("Device authorization successful after %s attempts", attempt + 1)
                     self._poll_result = result
                     return self.async_show_progress_done(next_step_id="finish")
                     
                 elif result["status"] == "pending":
+                    _LOGGER.debug("Still pending, sleeping %ss before next poll", self._interval)
                     await asyncio.sleep(self._interval)
                     continue
                     
                 elif result["status"] == "slow_down":
+                    _LOGGER.debug("Slow down requested, increasing interval from %ss to %ss", self._interval, self._interval + 5)
                     self._interval += 5
                     await asyncio.sleep(self._interval)
                     continue
                     
                 elif result["status"] == "expired":
+                    _LOGGER.warning("Device code expired after %s attempts", attempt + 1)
                     return self.async_show_progress_done(next_step_id="expired")
                     
                 elif result["status"] == "denied":
+                    _LOGGER.warning("Authorization denied after %s attempts", attempt + 1)
                     return self.async_show_progress_done(next_step_id="denied")
                     
                 else:
+                    _LOGGER.error("Unknown status '%s' after %s attempts", result.get("status"), attempt + 1)
                     return self.async_show_progress_done(next_step_id="error")
                     
             except TradosAuthError as err:
-                _LOGGER.error("Polling error: %s", err)
+                _LOGGER.error("Polling error on attempt %s: %s", attempt + 1, err)
                 return self.async_show_progress_done(next_step_id="auth_error")
         
         # Timeout

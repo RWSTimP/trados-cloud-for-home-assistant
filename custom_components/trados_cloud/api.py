@@ -57,11 +57,16 @@ class TradosAPIClient:
         """Get a valid access token, refreshing if necessary."""
         # Check if we have a valid cached token
         if self._token and self._token_expires:
+            time_until_expiry = (self._token_expires - datetime.now()).total_seconds()
+            _LOGGER.debug("Token expires in %s seconds", time_until_expiry)
+            
             if datetime.now() < self._token_expires - timedelta(minutes=5):
+                _LOGGER.debug("Using cached access token")
                 return self._token
             
             # Try to refresh if we have a refresh token
             if self._refresh_token:
+                _LOGGER.debug("Token expiring soon, attempting refresh")
                 try:
                     await self._refresh_access_token()
                     return self._token
@@ -70,6 +75,7 @@ class TradosAPIClient:
                     raise TradosAuthError("Token expired and refresh failed")
 
         if not self._token:
+            _LOGGER.error("No access token available")
             raise TradosAuthError("No access token available")
         
         return self._token
@@ -79,6 +85,7 @@ class TradosAPIClient:
         if not self._refresh_token:
             raise TradosAuthError("No refresh token available")
 
+        _LOGGER.debug("Refreshing access token")
         payload = {
             "client_id": self.client_id,
             "client_secret": self.client_secret,
@@ -104,9 +111,10 @@ class TradosAPIClient:
                 
                 # Update refresh token if provided
                 if "refresh_token" in data:
+                    _LOGGER.debug("Refresh token was rotated")
                     self._refresh_token = data["refresh_token"]
 
-                _LOGGER.debug("Access token refreshed successfully")
+                _LOGGER.debug("Access token refreshed successfully, expires in %s seconds", expires_in)
 
         except aiohttp.ClientError as err:
             _LOGGER.error("Network error during token refresh: %s", err)
@@ -148,6 +156,7 @@ class TradosAPIClient:
 
     async def poll_device_token(self, device_code: str) -> dict[str, Any]:
         """Poll for device flow token."""
+        _LOGGER.debug("Polling for device token")
         payload = {
             "client_id": self.client_id,
             "device_code": device_code,
@@ -161,6 +170,7 @@ class TradosAPIClient:
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as response:
                 data = await response.json()
+                _LOGGER.debug("Poll response status: %s", response.status)
 
                 if response.status == 200:
                     # Success!
@@ -170,6 +180,7 @@ class TradosAPIClient:
                     self._token_expires = datetime.now() + timedelta(seconds=expires_in)
                     
                     _LOGGER.info("Device authorization completed successfully")
+                    _LOGGER.debug("Token expires in %s seconds", expires_in)
                     return {
                         "status": "authorized",
                         "access_token": self._token,
@@ -179,13 +190,18 @@ class TradosAPIClient:
                     }
 
                 error = data.get("error")
+                _LOGGER.debug("Poll result: %s", error or "unknown")
                 if error == "authorization_pending":
+                    _LOGGER.debug("Authorization still pending, will retry")
                     return {"status": "pending"}
                 elif error == "slow_down":
+                    _LOGGER.debug("Slow down requested by server")
                     return {"status": "slow_down"}
                 elif error == "expired_token":
+                    _LOGGER.warning("Device code expired")
                     return {"status": "expired"}
                 elif error == "access_denied":
+                    _LOGGER.warning("Authorization denied by user")
                     return {"status": "denied"}
                 else:
                     _LOGGER.error("Device flow error: %s", data)
@@ -202,6 +218,7 @@ class TradosAPIClient:
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Make an authenticated request to the Trados API."""
+        _LOGGER.debug("Making %s request to %s", method, endpoint)
         token = await self._get_access_token()
 
         headers = {
@@ -211,6 +228,7 @@ class TradosAPIClient:
         }
 
         url = f"{self.base_url}{endpoint}"
+        _LOGGER.debug("Full URL: %s", url)
 
         try:
             async with self.session.request(
@@ -221,9 +239,11 @@ class TradosAPIClient:
                 **kwargs,
             ) as response:
                 response_text = await response.text()
+                _LOGGER.debug("Response status: %s", response.status)
 
                 if response.status == 401:
                     # Token might be expired, clear it and retry once
+                    _LOGGER.warning("Received 401, token may be expired")
                     self._token = None
                     self._token_expires = None
                     raise TradosAuthError("Token expired")
