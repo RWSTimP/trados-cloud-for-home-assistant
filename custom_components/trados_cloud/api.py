@@ -150,10 +150,10 @@ class TradosAPIClient:
         top = 100  # Max items per page
 
         while True:
+            # Remove the fields parameter for now - we'll add back what we need once we test
             params = {
                 "top": top,
                 "skip": skip,
-                "fields": "id,name,status,dueBy,createdAt,taskType,project,input",
             }
 
             try:
@@ -180,8 +180,13 @@ class TradosAPIClient:
     async def test_connection(self) -> bool:
         """Test the API connection and credentials."""
         try:
-            await self.get_assigned_tasks()
-            return True
+            # Just test authentication by getting a token
+            # Don't call any API endpoints yet
+            token = await self._get_access_token()
+            if token:
+                _LOGGER.info("Connection test successful - authentication works")
+                return True
+            return False
         except (TradosAPIError, TradosAuthError) as err:
             _LOGGER.error("Connection test failed: %s", err)
             return False
