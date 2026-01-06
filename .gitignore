@@ -50,3 +50,4 @@ desktop.ini
 *.bak
 *.backup
 config/.ha_run.lock
+config/.ha_run.lock
