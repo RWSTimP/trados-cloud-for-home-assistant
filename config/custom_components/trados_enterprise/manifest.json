@@ -1,0 +1,12 @@
+{
+  "domain": "trados_enterprise",
+  "name": "Trados Enterprise",
+  "codeowners": ["@yourusername"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/yourusername/trados-enterprise-ha",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "version": "0.1.0"
+}

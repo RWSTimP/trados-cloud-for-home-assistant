@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Home Assistant
+config/.storage/
+config/home-assistant.log*
+config/*.db
+config/*.db-shm
+config/*.db-wal
+config/secrets.yaml
+config/.cloud/
+config/.google.token
+config/known_devices.yaml
+config/deps/
+config/tts/
+config/www/
+config/themes/
+config/custom_components/**/
+
+# But keep our Trados integration
+!config/custom_components/trados_enterprise/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.backup

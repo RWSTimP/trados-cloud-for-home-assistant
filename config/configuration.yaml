@@ -1,0 +1,20 @@
+# Minimal Home Assistant configuration for development
+
+default_config:
+
+# Enable logging
+logger:
+  default: info
+  logs:
+    custom_components.trados_enterprise: debug
+
+# Enable API
+api:
+
+# Enable UI
+frontend:
+
+http:
+  # Uncomment for development
+  # server_host: 0.0.0.0
+  # server_port: 8123
