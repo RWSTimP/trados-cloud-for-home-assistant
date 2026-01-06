@@ -49,3 +49,4 @@ desktop.ini
 *.tmp
 *.bak
 *.backup
+config/.ha_run.lock
