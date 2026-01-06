@@ -1,4 +1,4 @@
-# Quick Start Guide - Trados Enterprise HA Integration
+# Quick Start Guide - Trados Cloud HA Integration
 
 ## You've successfully created the integration! 🎉
 
@@ -47,7 +47,7 @@ Open your browser to: **http://localhost:8123**
 
 1. Go to **Settings** → **Devices & Services**
 2. Click the **+ ADD INTEGRATION** button (bottom right)
-3. Search for **"Trados Enterprise"**
+3. Search for **"Trados Cloud"**
 4. Enter your credentials:
    - **Client ID**: From your Trados application
    - **Client Secret**: From your Trados application
@@ -71,7 +71,7 @@ You should see sensors like:
 
 ### Integration Not Found
 
-If you don't see "Trados Enterprise" in the integration list:
+If you don't see "Trados Cloud" in the integration list:
 1. Stop Home Assistant
 2. Check that `custom_components/trados_enterprise/` exists with all files
 3. Restart Home Assistant with `--verbose` flag
@@ -200,4 +200,4 @@ E:/HomeAssistant/.venv/Scripts/python.exe test_integration.py
 
 ## You're All Set! 🚀
 
-Your Trados Enterprise Home Assistant integration is ready to use. Start Home Assistant and configure it with your credentials to see your translation tasks!
+Your Trados Cloud Home Assistant integration is ready to use. Start Home Assistant and configure it with your credentials to see your translation tasks!

@@ -1,4 +1,4 @@
-# Start Home Assistant in Docker for Trados Enterprise Development
+# Start Home Assistant in Docker for Trados Cloud Development
 
 Write-Host "🐳 Starting Home Assistant in Docker..." -ForegroundColor Cyan
 Write-Host ""
@@ -68,7 +68,7 @@ Write-Host "   2. Open http://localhost:8123 in your browser" -ForegroundColor W
 Write-Host "   3. Complete onboarding wizard" -ForegroundColor White
 Write-Host "   4. Go to Settings → Devices & Services" -ForegroundColor White
 Write-Host "   5. Click '+ ADD INTEGRATION'" -ForegroundColor White
-Write-Host "   6. Search for 'Trados Enterprise'" -ForegroundColor White
+Write-Host "   6. Search for 'Trados Cloud'" -ForegroundColor White
 Write-Host ""
 Write-Host "🔍 Useful commands:" -ForegroundColor Magenta
 Write-Host "   View logs:    " -NoNewline -ForegroundColor White

@@ -1,7 +1,7 @@
-# Start Home Assistant for Trados Enterprise Development
+# Start Home Assistant for Trados Cloud Development
 # Run this script from the HomeAssistant directory
 
-Write-Host "🏠 Starting Home Assistant for Trados Enterprise Development..." -ForegroundColor Cyan
+Write-Host "🏠 Starting Home Assistant for Trados Cloud Development..." -ForegroundColor Cyan
 Write-Host ""
 
 # Check if virtual environment exists
@@ -27,12 +27,12 @@ Write-Host "✅ Home Assistant version: $haVersion" -ForegroundColor Green
 Write-Host ""
 
 # Check if integration exists
-if (-not (Test-Path "custom_components/trados_enterprise/__init__.py")) {
-    Write-Host "⚠️  Trados Enterprise integration not found!" -ForegroundColor Yellow
-    Write-Host "   Expected location: custom_components/trados_enterprise/" -ForegroundColor Yellow
+if (-not (Test-Path "custom_components/trados_cloud/__init__.py")) {
+    Write-Host "⚠️  Trados Cloud integration not found!" -ForegroundColor Yellow
+    Write-Host "   Expected location: custom_components/trados_cloud/" -ForegroundColor Yellow
 }
 else {
-    Write-Host "✅ Trados Enterprise integration found" -ForegroundColor Green
+    Write-Host "✅ Trados Cloud integration found" -ForegroundColor Green
 }
 
 Write-Host ""
@@ -43,7 +43,7 @@ Write-Host ""
 Write-Host "📝 After onboarding:" -ForegroundColor Magenta
 Write-Host "   1. Go to Settings → Devices & Services" -ForegroundColor White
 Write-Host "   2. Click '+ ADD INTEGRATION'" -ForegroundColor White
-Write-Host "   3. Search for 'Trados Enterprise'" -ForegroundColor White
+Write-Host "   3. Search for 'Trados Cloud'" -ForegroundColor White
 Write-Host "   4. Enter your Trados credentials" -ForegroundColor White
 Write-Host ""
 

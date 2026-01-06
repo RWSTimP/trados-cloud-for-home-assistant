@@ -6,7 +6,7 @@ default_config:
 logger:
   default: info
   logs:
-    custom_components.trados_enterprise: debug
+    custom_components.trados_cloud: debug
 
 # Enable API
 api:

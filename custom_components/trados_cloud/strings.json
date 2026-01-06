@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Trados Enterprise",
-        "description": "Enter your Trados Enterprise API credentials",
+        "title": "Trados Cloud",
+        "description": "Enter your Trados Cloud API credentials.",
         "data": {
           "client_id": "Client ID",
           "client_secret": "Client Secret",

@@ -1,6 +1,6 @@
 {
-  "domain": "trados_enterprise",
-  "name": "Trados Enterprise",
+  "domain": "trados_cloud",
+  "name": "Trados Cloud",
   "codeowners": ["@yourusername"],
   "config_flow": true,
   "dependencies": [],

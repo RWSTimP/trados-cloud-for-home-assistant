@@ -1,6 +1,6 @@
-# Trados Enterprise Integration for Home Assistant
+# Trados Cloud Integration for Home Assistant
 
-Monitor your Trados Enterprise translation tasks directly in Home Assistant.
+Monitor your Trados Cloud translation tasks directly in Home Assistant.
 
 ## Features
 
@@ -22,7 +22,7 @@ Monitor your Trados Enterprise translation tasks directly in Home Assistant.
 
 ### Prerequisites
 
-You need the following from your Trados Enterprise account:
+You need the following from your Trados Cloud account:
 1. **Client ID** - From your Trados application
 2. **Client Secret** - From your Trados application  
 3. **Tenant ID** - Your Trados Account ID (format: `2ef3c10e74fc39104e633c11`)
@@ -30,7 +30,7 @@ You need the following from your Trados Enterprise account:
 
 ### Getting Credentials
 
-1. Log in to Trados Enterprise
+1. Log in to Trados Cloud
 2. Go to **Manage Account** → **Integrations** → **Applications**
 3. Create a new application or use an existing one
 4. Note the **Client ID** and **Client Secret**
@@ -45,7 +45,7 @@ You need the following from your Trados Enterprise account:
 4. Click Install
 
 #### Option 2: Manual Installation
-1. Copy the `custom_components/trados_enterprise` folder to your HA `custom_components` directory
+1. Copy the `custom_components/trados_cloud` folder to your HA `custom_components` directory
 2. Restart Home Assistant
 
 ### Configuration
@@ -67,12 +67,12 @@ Once configured, you'll get these sensors:
 
 | Sensor | Entity ID | Description |
 |--------|-----------|-------------|
-| Total Tasks | `sensor.trados_enterprise_total_tasks` | Total assigned tasks |
-| Tasks Created | `sensor.trados_enterprise_tasks_created` | Tasks in "Created" status |
-| Tasks In Progress | `sensor.trados_enterprise_tasks_in_progress` | Tasks currently being worked on |
-| Tasks Completed | `sensor.trados_enterprise_tasks_completed` | Completed tasks |
-| Overdue Tasks | `sensor.trados_enterprise_overdue_tasks` | Tasks past their due date |
-| Total Words | `sensor.trados_enterprise_total_words` | Total word count across all tasks |
+| Total Tasks | `sensor.trados_cloud_total_tasks` | Total assigned tasks |
+| Tasks Created | `sensor.trados_cloud_tasks_created` | Tasks in "Created" status |
+| Tasks In Progress | `sensor.trados_cloud_tasks_in_progress` | Tasks currently being worked on |
+| Tasks Completed | `sensor.trados_cloud_tasks_completed` | Completed tasks |
+| Overdue Tasks | `sensor.trados_cloud_overdue_tasks` | Tasks past their due date |
+| Total Words | `sensor.trados_cloud_total_words` | Total word count across all tasks |
 
 ### Sensor Attributes
 
@@ -103,13 +103,13 @@ automation:
   - alias: "Trados - Overdue Task Alert"
     trigger:
       - platform: numeric_state
-        entity_id: sensor.trados_enterprise_overdue_tasks
+        entity_id: sensor.trados_cloud_overdue_tasks
         above: 0
     action:
       - service: notify.mobile_app
         data:
           title: "⚠️ Overdue Translation Tasks"
-          message: "You have {{ states('sensor.trados_enterprise_overdue_tasks') }} overdue tasks!"
+          message: "You have {{ states('sensor.trados_cloud_overdue_tasks') }} overdue tasks!"
 ```
 
 ### Daily Task Summary
@@ -125,9 +125,9 @@ automation:
         data:
           title: "📋 Your Trados Tasks Today"
           message: >
-            Total: {{ states('sensor.trados_enterprise_total_tasks') }}
-            In Progress: {{ states('sensor.trados_enterprise_tasks_in_progress') }}
-            Overdue: {{ states('sensor.trados_enterprise_overdue_tasks') }}
+            Total: {{ states('sensor.trados_cloud_total_tasks') }}
+            In Progress: {{ states('sensor.trados_cloud_tasks_in_progress') }}
+            Overdue: {{ states('sensor.trados_cloud_overdue_tasks') }}
 ```
 
 ## Development
@@ -148,7 +148,7 @@ automation:
 4. Copy integration to custom_components:
    ```bash
    mkdir config\custom_components
-   cp -r custom_components\trados_enterprise config\custom_components\
+   cp -r custom_components\trados_cloud config\custom_components\
    ```
 5. Run Home Assistant:
    ```bash
@@ -191,7 +191,7 @@ custom_components/trados_enterprise/
 
 ## API Rate Limits
 
-Trados Enterprise has the following limits:
+Trados Cloud has the following limits:
 - Maximum 16 token requests per day
 - Tokens are cached for 24 hours
 - This integration respects these limits

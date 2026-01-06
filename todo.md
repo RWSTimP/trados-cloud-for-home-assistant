@@ -1,9 +1,9 @@
-# Trados Enterprise Integration - TODO
+# Trados Cloud Integration - TODO
 
 ## Branding
 - [ ] Submit logo to Home Assistant Brands repository
   - Fork https://github.com/home-assistant/brands
-  - Create folder: `core_integrations/trados_enterprise/`
+  - Create folder: `core_integrations/trados_cloud/`
   - Add `logo.png` (256x256px)
   - Add `icon.png` (256x256px, same as logo or simplified version)
   - Submit pull request

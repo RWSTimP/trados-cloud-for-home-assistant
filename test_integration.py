@@ -1,4 +1,4 @@
-"""Test script to validate the Trados Enterprise integration."""
+"""Test script to validate the Trados Cloud integration."""
 import sys
 import os
 
@@ -7,11 +7,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'custom_components'))
 
 try:
     # Test imports
-    from trados_enterprise import const
-    from trados_enterprise import api
-    from trados_enterprise import coordinator
-    from trados_enterprise import sensor
-    from trados_enterprise import config_flow
+    from trados_cloud import const
+    from trados_cloud import api
+    from trados_cloud import coordinator
+    from trados_cloud import sensor
+    from trados_cloud import config_flow
     
     print("✅ All modules imported successfully!")
     print(f"   Domain: {const.DOMAIN}")
@@ -26,7 +26,7 @@ try:
     print("2. Open browser to http://localhost:8123")
     print("3. Complete onboarding")
     print("4. Go to Settings → Devices & Services")
-    print("5. Click 'Add Integration' and search for 'Trados Enterprise'")
+    print("5. Click 'Add Integration' and search for 'Trados Cloud'")
     print("6. Enter your Trados credentials")
     
 except ImportError as e:

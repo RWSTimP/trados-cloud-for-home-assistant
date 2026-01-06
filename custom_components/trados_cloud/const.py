@@ -2,7 +2,7 @@
 from datetime import timedelta
 
 # Domain
-DOMAIN = "trados_enterprise"
+DOMAIN = "trados_cloud"
 
 # Configuration
 CONF_CLIENT_ID = "client_id"
