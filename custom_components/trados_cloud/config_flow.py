@@ -1,4 +1,6 @@
 """Config flow for Trados Enterprise integration."""
+import asyncio
+from datetime import datetime
 import logging
 from typing import Any
 
@@ -13,10 +15,13 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import TradosAPIClient, TradosAPIError, TradosAuthError
 from .const import (
+    CONF_ACCESS_TOKEN,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
+    CONF_REFRESH_TOKEN,
     CONF_REGION,
     CONF_TENANT_ID,
+    CONF_TOKEN_EXPIRES,
     DEFAULT_REGION,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -25,71 +30,80 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
-    """Validate the user input allows us to connect."""
-    session = async_get_clientsession(hass)
-
-    client = TradosAPIClient(
-        session=session,
-        client_id=data[CONF_CLIENT_ID],
-        client_secret=data[CONF_CLIENT_SECRET],
-        tenant_id=data[CONF_TENANT_ID],
-        region=data.get(CONF_REGION, DEFAULT_REGION),
-    )
-
-    # Test the connection
-    if not await client.test_connection():
-        raise TradosAuthError("Unable to authenticate with Trados Enterprise")
-
-    # Return info to be stored in the config entry
-    return {
-        "title": f"Trados Enterprise ({data[CONF_TENANT_ID]})",
-    }
-
-
 class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Trados Enterprise."""
+    """Handle a config flow for Trados Cloud with Device Code auth."""
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        """Initialize the config flow."""
+        self._client_id: str | None = None
+        self._client_secret: str | None = None
+        self._tenant_id: str | None = None
+        self._region: str = DEFAULT_REGION
+        self._scan_interval: float = DEFAULT_SCAN_INTERVAL.total_seconds() / 60
+        self._device_code: str | None = None
+        self._user_code: str | None = None
+        self._verification_uri: str | None = None
+        self._verification_uri_complete: str | None = None
+        self._interval: int = 5
+        self._api_client: TradosAPIClient | None = None
+        self._poll_result: dict[str, Any] | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the initial step."""
+        """Handle the initial step - collect credentials."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            self._client_id = user_input[CONF_CLIENT_ID]
+            self._client_secret = user_input[CONF_CLIENT_SECRET]
+            self._tenant_id = user_input[CONF_TENANT_ID]
+            self._region = user_input.get(CONF_REGION, DEFAULT_REGION)
+            self._scan_interval = user_input.get(
+                CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL.total_seconds() / 60
+            )
+
             # Check if already configured
-            await self.async_set_unique_id(user_input[CONF_TENANT_ID])
+            await self.async_set_unique_id(self._tenant_id)
             self._abort_if_unique_id_configured()
 
+            # Create API client and start device flow
+            session = async_get_clientsession(self.hass)
+            self._api_client = TradosAPIClient(
+                session=session,
+                client_id=self._client_id,
+                client_secret=self._client_secret,
+                tenant_id=self._tenant_id,
+                region=self._region,
+            )
+
             try:
-                info = await validate_input(self.hass, user_input)
-            except TradosAuthError:
+                device_data = await self._api_client.start_device_flow()
+                self._device_code = device_data["device_code"]
+                self._user_code = device_data["user_code"]
+                self._verification_uri = device_data["verification_uri"]
+                self._verification_uri_complete = device_data.get("verification_uri_complete")
+                self._interval = device_data["interval"]
+                
+                # Use complete URI if available (includes code), otherwise show URI and code separately
+                auth_url = self._verification_uri_complete or self._verification_uri
+                _LOGGER.info("Device flow started")
+                _LOGGER.info("Authorization URL: %s", auth_url)
+                if not self._verification_uri_complete:
+                    _LOGGER.info("User code: %s", self._user_code)
+                
+                return await self.async_step_authorize()
+                
+            except TradosAuthError as err:
+                _LOGGER.error("Failed to start device flow: %s", err)
                 errors["base"] = "auth_failed"
-            except TradosAPIError:
-                errors["base"] = "connection_failed"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception during validation")
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected error: %s", err)
                 errors["base"] = "unknown"
-            else:
-                # Store the scan interval in minutes
-                scan_interval_minutes = user_input.get(
-                    CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL.total_seconds() / 60
-                )
 
-                return self.async_create_entry(
-                    title=info["title"],
-                    data={
-                        CONF_CLIENT_ID: user_input[CONF_CLIENT_ID],
-                        CONF_CLIENT_SECRET: user_input[CONF_CLIENT_SECRET],
-                        CONF_TENANT_ID: user_input[CONF_TENANT_ID],
-                        CONF_REGION: user_input.get(CONF_REGION, DEFAULT_REGION),
-                        CONF_SCAN_INTERVAL: scan_interval_minutes,
-                    },
-                )
-
-        # Show the configuration form
+        # Show credential form
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_CLIENT_ID): str,
@@ -107,6 +121,103 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=data_schema,
             errors=errors,
+        )
+
+    async def async_step_authorize(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show authorization instructions."""
+        if user_input is not None:
+            # User clicked "I have authorized" - start polling
+            return self.async_show_progress(
+                step_id="poll",
+                progress_action="polling",
+                progress_task=asyncio.create_task(self.async_poll_for_token()),
+            )
+        
+        # Use complete URI if available, otherwise show base URI and code
+        auth_url = self._verification_uri_complete or self._verification_uri
+        
+        # Show authorization form with instructions
+        return self.async_external_step(
+            step_id="authorize",
+            url=auth_url,
+        )
+
+    async def async_poll_for_token(self) -> FlowResult:
+        """Background task to poll for device authorization."""
+        max_attempts = 60  # 5 minutes with 5 second intervals
+        
+        for attempt in range(max_attempts):
+            try:
+                result = await self._api_client.poll_device_token(self._device_code)
+                
+                if result["status"] == "authorized":
+                    # Store token info for finish step
+                    self._poll_result = result
+                    return self.async_show_progress_done(next_step_id="finish")
+                    
+                elif result["status"] == "pending":
+                    await asyncio.sleep(self._interval)
+                    continue
+                    
+                elif result["status"] == "slow_down":
+                    self._interval += 5
+                    await asyncio.sleep(self._interval)
+                    continue
+                    
+                elif result["status"] == "expired":
+                    return self.async_show_progress_done(next_step_id="expired")
+                    
+                elif result["status"] == "denied":
+                    return self.async_show_progress_done(next_step_id="denied")
+                    
+                else:
+                    return self.async_show_progress_done(next_step_id="error")
+                    
+            except TradosAuthError as err:
+                _LOGGER.error("Polling error: %s", err)
+                return self.async_show_progress_done(next_step_id="auth_error")
+        
+        # Timeout
+        return self.async_show_progress_done(next_step_id="timeout")
+
+    async def async_step_expired(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Handle expired device code."""
+        return self.async_abort(reason="device_code_expired")
+
+    async def async_step_denied(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Handle denied authorization."""
+        return self.async_abort(reason="authorization_denied")
+
+    async def async_step_error(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Handle unknown error."""
+        return self.async_abort(reason="unknown")
+
+    async def async_step_auth_error(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Handle authentication error."""
+        return self.async_abort(reason="auth_failed")
+
+    async def async_step_timeout(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Handle timeout."""
+        return self.async_abort(reason="timeout")
+
+    async def async_step_finish(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Finish the flow after successful authorization."""
+        return self.async_create_entry(
+            title=f"Trados Cloud ({self._tenant_id})",
+            data={
+                CONF_CLIENT_ID: self._client_id,
+                CONF_CLIENT_SECRET: self._client_secret,
+                CONF_TENANT_ID: self._tenant_id,
+                CONF_REGION: self._region,
+                CONF_SCAN_INTERVAL: self._scan_interval,
+                CONF_ACCESS_TOKEN: self._api_client._token,
+                CONF_REFRESH_TOKEN: self._api_client._refresh_token,
+                CONF_TOKEN_EXPIRES: self._api_client._token_expires.isoformat() if self._api_client._token_expires else None,
+            },
         )
 
     @staticmethod

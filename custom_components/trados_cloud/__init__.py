@@ -1,5 +1,5 @@
 """The Trados Enterprise integration."""
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -9,11 +9,14 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import TradosAPIClient
 from .const import (
+    CONF_ACCESS_TOKEN,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
+    CONF_REFRESH_TOKEN,
     CONF_REGION,
     CONF_SCAN_INTERVAL,
     CONF_TENANT_ID,
+    CONF_TOKEN_EXPIRES,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
@@ -28,6 +31,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Trados Enterprise from a config entry."""
     _LOGGER.debug("Setting up Trados Enterprise integration")
 
+    # Parse token expiry
+    token_expires = None
+    if CONF_TOKEN_EXPIRES in entry.data:
+        try:
+            token_expires = datetime.fromisoformat(entry.data[CONF_TOKEN_EXPIRES])
+        except (ValueError, TypeError):
+            _LOGGER.warning("Invalid token expiry format")
+
     # Create API client
     session = async_get_clientsession(hass)
     client = TradosAPIClient(
@@ -36,6 +47,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         client_secret=entry.data[CONF_CLIENT_SECRET],
         tenant_id=entry.data[CONF_TENANT_ID],
         region=entry.data.get(CONF_REGION, "eu"),
+        access_token=entry.data.get(CONF_ACCESS_TOKEN),
+        refresh_token=entry.data.get(CONF_REFRESH_TOKEN),
+        token_expires=token_expires,
     )
 
     # Get scan interval (convert from minutes to timedelta)

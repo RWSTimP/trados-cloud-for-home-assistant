@@ -10,13 +10,20 @@ CONF_CLIENT_SECRET = "client_secret"
 CONF_TENANT_ID = "tenant_id"
 CONF_REGION = "region"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_ACCESS_TOKEN = "access_token"
+CONF_REFRESH_TOKEN = "refresh_token"
+CONF_TOKEN_EXPIRES = "token_expires"
 
 # Defaults
 DEFAULT_SCAN_INTERVAL = timedelta(minutes=15)
 DEFAULT_REGION = "eu"
 
+# Auth0 Configuration
+AUTH0_DOMAIN = "sdl-prod.eu.auth0.com"
+AUTH0_TOKEN_URL = f"https://{AUTH0_DOMAIN}/oauth/token"
+AUTH0_DEVICE_CODE_URL = f"https://{AUTH0_DOMAIN}/oauth/device/code"
+
 # API Endpoints
-AUTH0_TOKEN_URL = "https://sdl-prod.eu.auth0.com/oauth/token"
 API_BASE_URL = "https://api.{region}.cloud.trados.com/public-api/v1"
 API_AUDIENCE = "https://api.sdl.com"
 

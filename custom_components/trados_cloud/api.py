@@ -9,6 +9,7 @@ import aiohttp
 from .const import (
     API_AUDIENCE,
     API_BASE_URL,
+    AUTH0_DEVICE_CODE_URL,
     AUTH0_TOKEN_URL,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
@@ -36,7 +37,10 @@ class TradosAPIClient:
         client_id: str,
         client_secret: str,
         tenant_id: str,
-        region: str = "eu",
+        region: str,
+        access_token: str | None = None,
+        refresh_token: str | None = None,
+        token_expires: datetime | None = None,
     ) -> None:
         """Initialize the API client."""
         self.session = session
@@ -45,22 +49,41 @@ class TradosAPIClient:
         self.tenant_id = tenant_id
         self.region = region
         self.base_url = API_BASE_URL.format(region=region)
-        self._token: str | None = None
-        self._token_expires: datetime | None = None
+        self._token: str | None = access_token
+        self._refresh_token: str | None = refresh_token
+        self._token_expires: datetime | None = token_expires
 
     async def _get_access_token(self) -> str:
-        """Get or refresh the access token from Auth0."""
+        """Get a valid access token, refreshing if necessary."""
         # Check if we have a valid cached token
         if self._token and self._token_expires:
             if datetime.now() < self._token_expires - timedelta(minutes=5):
                 return self._token
+            
+            # Try to refresh if we have a refresh token
+            if self._refresh_token:
+                try:
+                    await self._refresh_access_token()
+                    return self._token
+                except TradosAuthError:
+                    _LOGGER.warning("Token refresh failed, need re-authentication")
+                    raise TradosAuthError("Token expired and refresh failed")
 
-        # Request a new token
+        if not self._token:
+            raise TradosAuthError("No access token available")
+        
+        return self._token
+
+    async def _refresh_access_token(self) -> None:
+        """Refresh the access token using refresh token."""
+        if not self._refresh_token:
+            raise TradosAuthError("No refresh token available")
+
         payload = {
             "client_id": self.client_id,
             "client_secret": self.client_secret,
-            "grant_type": "client_credentials",
-            "audience": API_AUDIENCE,
+            "grant_type": "refresh_token",
+            "refresh_token": self._refresh_token,
         }
 
         try:
@@ -71,19 +94,105 @@ class TradosAPIClient:
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
-                    _LOGGER.error("Auth0 token request failed: %s", error_text)
-                    raise TradosAuthError(f"Authentication failed: {response.status}")
+                    _LOGGER.error("Token refresh failed: %s", error_text)
+                    raise TradosAuthError(f"Token refresh failed: {response.status}")
 
                 data = await response.json()
                 self._token = data["access_token"]
-                expires_in = data.get("expires_in", 86400)  # Default 24 hours
+                expires_in = data.get("expires_in", 86400)
                 self._token_expires = datetime.now() + timedelta(seconds=expires_in)
+                
+                # Update refresh token if provided
+                if "refresh_token" in data:
+                    self._refresh_token = data["refresh_token"]
 
-                _LOGGER.debug("Successfully obtained access token, expires in %s seconds", expires_in)
-                return self._token
+                _LOGGER.debug("Access token refreshed successfully")
 
         except aiohttp.ClientError as err:
-            _LOGGER.error("Network error during authentication: %s", err)
+            _LOGGER.error("Network error during token refresh: %s", err)
+            raise TradosAuthError(f"Network error: {err}") from err
+
+    async def start_device_flow(self) -> dict[str, Any]:
+        """Start the OAuth2 device authorization flow."""
+        payload = {
+            "client_id": self.client_id,
+            "scope": "openid profile email offline_access",
+            "audience": API_AUDIENCE,
+        }
+
+        try:
+            async with self.session.post(
+                AUTH0_DEVICE_CODE_URL,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    _LOGGER.error("Device flow start failed: %s", error_text)
+                    raise TradosAuthError(f"Device flow failed: {response.status}")
+
+                data = await response.json()
+                _LOGGER.info("Device flow started successfully")
+                return {
+                    "device_code": data["device_code"],
+                    "user_code": data["user_code"],
+                    "verification_uri": data.get("verification_uri_complete", data["verification_uri"]),
+                    "verification_uri_complete": data.get("verification_uri_complete"),
+                    "interval": data.get("interval", 5),
+                    "expires_in": data.get("expires_in", 1800),
+                }
+
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Network error during device flow: %s", err)
+            raise TradosAuthError(f"Network error: {err}") from err
+
+    async def poll_device_token(self, device_code: str) -> dict[str, Any]:
+        """Poll for device flow token."""
+        payload = {
+            "client_id": self.client_id,
+            "device_code": device_code,
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        }
+
+        try:
+            async with self.session.post(
+                AUTH0_TOKEN_URL,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as response:
+                data = await response.json()
+
+                if response.status == 200:
+                    # Success!
+                    self._token = data["access_token"]
+                    self._refresh_token = data.get("refresh_token")
+                    expires_in = data.get("expires_in", 86400)
+                    self._token_expires = datetime.now() + timedelta(seconds=expires_in)
+                    
+                    _LOGGER.info("Device authorization completed successfully")
+                    return {
+                        "status": "authorized",
+                        "access_token": self._token,
+                        "refresh_token": self._refresh_token,
+                        "expires_in": expires_in,
+                        "token_expires": self._token_expires.isoformat(),
+                    }
+
+                error = data.get("error")
+                if error == "authorization_pending":
+                    return {"status": "pending"}
+                elif error == "slow_down":
+                    return {"status": "slow_down"}
+                elif error == "expired_token":
+                    return {"status": "expired"}
+                elif error == "access_denied":
+                    return {"status": "denied"}
+                else:
+                    _LOGGER.error("Device flow error: %s", data)
+                    return {"status": "error", "error": error}
+
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Network error during device flow: %s", err)
             raise TradosAuthError(f"Network error: {err}") from err
 
     async def _make_request(

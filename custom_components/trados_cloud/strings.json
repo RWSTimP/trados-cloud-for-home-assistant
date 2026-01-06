@@ -20,6 +20,10 @@
         }
       }
     },
+    "progress": {
+      "authorize_device": "**Action Required: Authorize in Browser**\n\n**Click or copy this link to authorize:**\n{verification_uri}\n\n**User Code:** {user_code}\n\nWaiting for authorization...",
+      "polling": "Waiting for authorization to complete..."
+    },
     "error": {
       "auth_failed": "Authentication failed. Please check your credentials.",
       "connection_failed": "Unable to connect to Trados Enterprise API.",
@@ -27,7 +31,10 @@
       "unknown": "An unexpected error occurred."
     },
     "abort": {
-      "already_configured": "This Trados Enterprise account is already configured."
+      "already_configured": "This Trados Cloud account is already configured.",
+      "device_code_expired": "Authorization timed out. Please try again.",
+      "authorization_denied": "Authorization was denied.",
+      "timeout": "Authorization timed out. Please try again."
     }
   },
   "options": {
