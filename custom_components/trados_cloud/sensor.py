@@ -45,6 +45,18 @@ async def async_setup_entry(
             TradosTotalWordsSensor(coordinator, entry),
             TradosNextDueDateSensor(coordinator, entry),
         ])
+    
+    # Create user-level aggregate sensors (sum across all tenants)
+    if coordinators:
+        entities.extend([
+            TradosUserTotalTasksSensor(coordinators, entry),
+            TradosUserTasksByStatusSensor(coordinators, entry, "created", SENSOR_TASKS_CREATED),
+            TradosUserTasksByStatusSensor(coordinators, entry, "inProgress", SENSOR_TASKS_IN_PROGRESS),
+            TradosUserTasksByStatusSensor(coordinators, entry, "completed", SENSOR_TASKS_COMPLETED),
+            TradosUserOverdueTasksSensor(coordinators, entry),
+            TradosUserTotalWordsSensor(coordinators, entry),
+            TradosUserNextDueDateSensor(coordinators, entry),
+        ])
 
     async_add_entities(entities)
 
@@ -320,6 +332,260 @@ class TradosNextDueDateSensor(TradosBaseSensor):
                             due_72h += 1
                     except (ValueError, AttributeError):
                         pass
+
+        return {
+            "due_within_24h": due_24h,
+            "due_within_48h": due_48h,
+            "due_within_72h": due_72h,
+        }
+
+
+# User-level aggregate sensors (sum across all tenants)
+
+class TradosUserBaseSensor(SensorEntity):
+    """Base class for user-level aggregate Trados sensors."""
+
+    def __init__(
+        self,
+        coordinators: list[TradosDataCoordinator],
+        entry: ConfigEntry,
+        sensor_type: str,
+        name: str,
+    ) -> None:
+        """Initialize the sensor."""
+        self.coordinators = coordinators
+        self._attr_unique_id = f"{entry.entry_id}_user_{sensor_type}"
+        self._attr_has_entity_name = True
+        self._attr_name = name
+        self._sensor_type = sensor_type
+
+        # Device info - create a user-level device
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, f"{entry.entry_id}_user")},
+            "name": "All Inboxes",
+            "manufacturer": "RWS",
+            "model": "Trados Assignments Summary",
+            "entry_type": "service",
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass, track all coordinators."""
+        for coordinator in self.coordinators:
+            self.async_on_remove(
+                coordinator.async_add_listener(self.async_write_ha_state)
+            )
+        await super().async_added_to_hass()
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return any(coordinator.last_update_success for coordinator in self.coordinators)
+
+
+class TradosUserTotalTasksSensor(TradosUserBaseSensor):
+    """User-level sensor for total assigned tasks across all tenants."""
+
+    def __init__(self, coordinators: list[TradosDataCoordinator], entry: ConfigEntry) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinators, entry, SENSOR_TOTAL_TASKS, "Total Tasks")
+        self._attr_icon = "mdi:clipboard-list"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int:
+        """Return the sum of tasks across all tenants."""
+        total = sum(
+            int(coordinator.data.get("total_tasks", 0))
+            for coordinator in self.coordinators
+            if coordinator.data
+        )
+        return total
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        tenant_counts = {}
+        for coordinator in self.coordinators:
+            if coordinator.data and coordinator.tenant_name:
+                tenant_counts[coordinator.tenant_name] = int(coordinator.data.get("total_tasks", 0))
+        
+        return {"by_tenant": tenant_counts}
+
+
+class TradosUserTasksByStatusSensor(TradosUserBaseSensor):
+    """User-level sensor for tasks by status across all tenants."""
+
+    def __init__(
+        self,
+        coordinators: list[TradosDataCoordinator],
+        entry: ConfigEntry,
+        status: str,
+        sensor_type: str,
+    ) -> None:
+        """Initialize the sensor."""
+        status_name = status.replace("inProgress", "In Progress").title()
+        super().__init__(coordinators, entry, sensor_type, f"Tasks {status_name}")
+        self._status = status
+        self._attr_icon = self._get_icon_for_status(status)
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    def _get_icon_for_status(self, status: str) -> str:
+        """Get icon based on status."""
+        icons = {
+            "created": "mdi:clipboard-outline",
+            "inProgress": "mdi:clipboard-edit",
+            "completed": "mdi:clipboard-check",
+        }
+        return icons.get(status, "mdi:clipboard")
+
+    @property
+    def native_value(self) -> int:
+        """Return the sum of tasks with this status across all tenants."""
+        total = sum(
+            int(coordinator.data.get("tasks_by_status", {}).get(self._status, 0))
+            for coordinator in self.coordinators
+            if coordinator.data
+        )
+        return total
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        tenant_counts = {}
+        for coordinator in self.coordinators:
+            if coordinator.data and coordinator.tenant_name:
+                count = int(coordinator.data.get("tasks_by_status", {}).get(self._status, 0))
+                tenant_counts[coordinator.tenant_name] = count
+        
+        return {"by_tenant": tenant_counts}
+
+
+class TradosUserOverdueTasksSensor(TradosUserBaseSensor):
+    """User-level sensor for overdue tasks across all tenants."""
+
+    def __init__(self, coordinators: list[TradosDataCoordinator], entry: ConfigEntry) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinators, entry, SENSOR_OVERDUE_TASKS, "Overdue Tasks")
+        self._attr_icon = "mdi:alert-circle"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int:
+        """Return the sum of overdue tasks across all tenants."""
+        total = sum(
+            int(coordinator.data.get("overdue_tasks", 0))
+            for coordinator in self.coordinators
+            if coordinator.data
+        )
+        return total
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        tenant_counts = {}
+        for coordinator in self.coordinators:
+            if coordinator.data and coordinator.tenant_name:
+                count = int(coordinator.data.get("overdue_tasks", 0))
+                tenant_counts[coordinator.tenant_name] = count
+        
+        return {"by_tenant": tenant_counts}
+
+
+class TradosUserTotalWordsSensor(TradosUserBaseSensor):
+    """User-level sensor for total word count across all tenants."""
+
+    def __init__(self, coordinators: list[TradosDataCoordinator], entry: ConfigEntry) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinators, entry, SENSOR_TOTAL_WORDS, "Total Words")
+        self._attr_icon = "mdi:text-box-outline"
+        self._attr_native_unit_of_measurement = "words"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int:
+        """Return the sum of words across all tenants."""
+        total = sum(
+            int(coordinator.data.get("total_words", 0))
+            for coordinator in self.coordinators
+            if coordinator.data
+        )
+        return total
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        tenant_counts = {}
+        for coordinator in self.coordinators:
+            if coordinator.data and coordinator.tenant_name:
+                count = int(coordinator.data.get("total_words", 0))
+                tenant_counts[coordinator.tenant_name] = count
+        
+        return {"by_tenant": tenant_counts}
+
+
+class TradosUserNextDueDateSensor(TradosUserBaseSensor):
+    """User-level sensor for earliest due date across all tenants."""
+
+    def __init__(self, coordinators: list[TradosDataCoordinator], entry: ConfigEntry) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinators, entry, SENSOR_NEXT_DUE_DATE, "Next Due Date")
+        self._attr_icon = "mdi:calendar-clock"
+        self._attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the earliest due date across all tenants."""
+        earliest_due = None
+
+        for coordinator in self.coordinators:
+            if not coordinator.data:
+                continue
+            
+            tasks = coordinator.data.get("tasks", [])
+            for task in tasks:
+                status = task.get("status")
+                if status not in ["completed", "canceled", "skipped"]:
+                    due_by = task.get("due_by")
+                    if due_by:
+                        try:
+                            due_date = datetime.fromisoformat(due_by.replace("Z", "+00:00"))
+                            if earliest_due is None or due_date < earliest_due:
+                                earliest_due = due_date
+                        except (ValueError, AttributeError):
+                            pass
+
+        return earliest_due
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        now = datetime.now(timezone.utc)
+        due_24h = 0
+        due_48h = 0
+        due_72h = 0
+
+        for coordinator in self.coordinators:
+            if not coordinator.data:
+                continue
+            
+            tasks = coordinator.data.get("tasks", [])
+            for task in tasks:
+                status = task.get("status")
+                if status not in ["completed", "canceled", "skipped"]:
+                    due_by = task.get("due_by")
+                    if due_by:
+                        try:
+                            due_date = datetime.fromisoformat(due_by.replace("Z", "+00:00"))
+                            hours_until_due = (due_date - now).total_seconds() / 3600
+                            
+                            if 0 < hours_until_due <= 24:
+                                due_24h += 1
+                            if 0 < hours_until_due <= 48:
+                                due_48h += 1
+                            if 0 < hours_until_due <= 72:
+                                due_72h += 1
+                        except (ValueError, AttributeError):
+                            pass
 
         return {
             "due_within_24h": due_24h,
