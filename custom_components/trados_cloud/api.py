@@ -159,6 +159,7 @@ class TradosAPIClient:
         _LOGGER.debug("Polling for device token")
         payload = {
             "client_id": self.client_id,
+            "client_secret": self.client_secret,
             "device_code": device_code,
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
         }
@@ -203,6 +204,9 @@ class TradosAPIClient:
                 elif error == "access_denied":
                     _LOGGER.warning("Authorization denied by user")
                     return {"status": "denied"}
+                elif error == "invalid_grant":
+                    _LOGGER.warning("Device code invalid or expired")
+                    return {"status": "expired"}
                 else:
                     _LOGGER.error("Device flow error: %s", data)
                     return {"status": "error", "error": error}

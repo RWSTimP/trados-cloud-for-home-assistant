@@ -5,7 +5,6 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
-import webbrowser
 
 import aiohttp
 import voluptuous as vol
@@ -156,69 +155,22 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_authorize(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show authorization URL for user to click."""
+        """Show authorization URL and start polling."""
+        if self._poll_result:
+            # Already authorized, advance to finish
+            return self.async_show_progress_done(next_step_id="finish")
+
         auth_url = self._verification_uri_complete or self._verification_uri
         _LOGGER.info("Authorization URL: %s", auth_url)
-        
-        # Show external step with clickable URL and start polling immediately
-        self.hass.async_create_task(self._start_polling_after_external_step())
-        
-        return self.async_external_step(
-            step_id="authorize",
-            url=auth_url,
-        )
-    
-    async def _start_polling_after_external_step(self) -> None:
-        """Start polling in the background while external step is displayed."""
-        # Give the external step UI time to display
-        await asyncio.sleep(1)
-        _LOGGER.debug("Starting background polling")
-        
-        max_attempts = 60
-        for attempt in range(max_attempts):
-            _LOGGER.debug("Poll attempt %s/%s (interval: %ss)", attempt + 1, max_attempts, self._interval)
-            try:
-                result = await self._api_client.poll_device_token(self._device_code)
-                
-                if result["status"] == "authorized":
-                    _LOGGER.info("Device authorization successful after %s attempts", attempt + 1)
-                    self._poll_result = result
-                    # Complete external step and move to finish
-                    self.hass.async_create_task(
-                        self._async_finish_external_step()
-                    )
-                    return
-                    
-                elif result["status"] == "pending":
-                    _LOGGER.debug("Still pending, sleeping %ss before next poll", self._interval)
-                    await asyncio.sleep(self._interval)
-                    continue
-                    
-                elif result["status"] == "slow_down":
-                    _LOGGER.debug("Slow down requested, increasing interval")
-                    self._interval += 5
-                    await asyncio.sleep(self._interval)
-                    continue
-                    
-                else:
-                    _LOGGER.warning("Authorization failed or expired: %s", result.get("status"))
-                    return
-                    
-            except Exception as err:
-                _LOGGER.error("Polling error: %s", err)
-                await asyncio.sleep(self._interval)
-    
-    async def _async_finish_external_step(self) -> None:
-        """Complete the external step and move to finish."""
-        self.async_external_step_done(next_step_id="finish")
-    
-    async def async_step_authorize_complete(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """User clicked Submit - just show progress while waiting for polling."""
+
+        # Show progress with URL and start polling immediately
         return self.async_show_progress(
-            step_id="authorize_complete",
+            step_id="authorize",
             progress_action="authorize_device",
+            description_placeholders={
+                "verification_uri": auth_url,
+            },
+            progress_task=asyncio.create_task(self.async_poll_for_token()),
         )
 
     async def async_poll_for_token(self) -> FlowResult:
@@ -258,7 +210,7 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     
                 else:
                     _LOGGER.error("Unknown status '%s' after %s attempts", result.get("status"), attempt + 1)
-                    return self.async_show_progress_done(next_step_id="error")
+                    return self.async_show_progress_done(next_step_id="expired")
                     
             except TradosAuthError as err:
                 _LOGGER.error("Polling error on attempt %s: %s", attempt + 1, err)
