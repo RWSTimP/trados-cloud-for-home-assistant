@@ -5,6 +5,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import TradosAPIClient
@@ -69,11 +70,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Fetch initial data
     await coordinator.async_config_entry_first_refresh()
 
+    # Explicitly schedule periodic refreshes (belt-and-braces)
+    async def _handle_refresh(now) -> None:
+        await coordinator.async_request_refresh()
+
+    unsub_refresh = async_track_time_interval(hass, _handle_refresh, scan_interval)
+
     # Store coordinator and client
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
         "client": client,
+        "unsub_refresh": unsub_refresh,
     }
 
     # Set up platforms
@@ -95,7 +103,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Remove data
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        data = hass.data[DOMAIN].pop(entry.entry_id)
+        if (unsub := data.get("unsub_refresh")):
+            unsub()
 
     return unload_ok
 
