@@ -20,6 +20,7 @@ class TradosDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hass: HomeAssistant,
         client: TradosAPIClient,
         update_interval: timedelta,
+        tenant_name: str | None = None,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -29,6 +30,7 @@ class TradosDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=update_interval,
         )
         self.client = client
+        self.tenant_name = tenant_name
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from Trados API."""

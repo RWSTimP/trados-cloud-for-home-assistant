@@ -87,6 +87,17 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step - collect credentials."""
+        # Check if this is coming from options flow with pre-configured data
+        if user_input and "entry_data" in user_input:
+            entry_data = user_input["entry_data"]
+            title = user_input["title"]
+            unique_id = user_input["unique_id"]
+            
+            await self.async_set_unique_id(unique_id)
+            self._abort_if_unique_id_configured()
+            
+            return self.async_create_entry(title=title, data=entry_data)
+        
         errors: dict[str, str] = {}
 
         global_data = await self._load_global()
@@ -316,19 +327,12 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._available_tenants = []
 
         for acc in accounts:
-            # Accept any reasonable identifier key
-            tenant_id = None
-            for key in ("accountUid", "accountId", "id", "tenantId", "uid"):
-                candidate = acc.get(key)
-                if candidate:
-                    tenant_id = candidate
-                    break
-
+            tenant_id = acc.get("id")
             if not tenant_id:
                 continue
 
-            name = acc.get("name") or acc.get("displayName") or tenant_id
-            region = acc.get("region") or acc.get("dataCenter") or acc.get("datacenter") or acc.get("location") or DEFAULT_REGION
+            name = acc.get("name") or tenant_id
+            region = acc.get("regionCode") or DEFAULT_REGION
             self._available_tenants.append({"id": tenant_id, "name": name, "region": region})
 
         self._available_tenants.sort(key=lambda t: (t["name"] or "").lower())
@@ -366,28 +370,38 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._user_display_name = user.get("email") or user.get("fullName") or ""
         self._name = self._user_display_name or self._name or "Trados"
 
-        await self.async_set_unique_id(f"{self._tenant_id}_{self._name}")
+        await self.async_set_unique_id(self._user_display_name or "trados_cloud_service")
         self._abort_if_unique_id_configured()
 
-        title = self._name or f"Trados Cloud ({self._tenant_id})"
+        title = self._name or "Trados Cloud"
         token_expires = (
             self._api_client._token_expires.isoformat()
             if self._api_client._token_expires
             else None
         )
 
+        # Store the first tenant in a list
+        tenants = [
+            {
+                "id": self._tenant_id,
+                "name": tenant.get("name"),
+                "region": self._region,
+            }
+        ]
+
         entry_data = {
             CONF_NAME: self._name,
             CONF_CLIENT_ID: self._client_id,
             CONF_CLIENT_SECRET: self._client_secret,
-            CONF_TENANT_ID: self._tenant_id,
-            CONF_REGION: self._region,
+            CONF_TENANT_ID: self._tenant_id,  # Keep for backward compatibility
+            CONF_REGION: self._region,  # Keep for backward compatibility
             CONF_SCAN_INTERVAL: self._scan_interval,
             CONF_ACCESS_TOKEN: self._api_client._token,
             CONF_REFRESH_TOKEN: self._api_client._refresh_token,
             CONF_TOKEN_EXPIRES: token_expires,
-            "tenant_name": tenant.get("name"),
+            "tenant_name": tenant.get("name"),  # Keep for backward compatibility
             "user_display_name": self._user_display_name,
+            "tenants": tenants,  # New multi-tenant structure
         }
 
         return self.async_create_entry(title=title, data=entry_data)
@@ -406,21 +420,184 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        self._config_entry = config_entry
+        self._api_client: TradosAPIClient | None = None
+        self._available_tenants: list[dict[str, Any]] = []
+        self._client_id: str | None = None
+        self._client_secret: str | None = None
+        self._tenant_id: str | None = None
+        self._region: str | None = None
+        self._name: str = ""
+        self._scan_interval: float = DEFAULT_SCAN_INTERVAL.total_seconds() / 60
+        self._user_display_name: str | None = None
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage the options."""
+        """Show options menu for actions."""
+        if user_input is None:
+            return self.async_show_menu(
+                step_id="init",
+                menu_options=["add_device", "set_options"],
+            )
+
+        option = user_input.get("next_step") or user_input
+        if option == "add_device":
+            return await self.async_step_add_device()
+        if option == "set_options":
+            return await self.async_step_set_options()
+
+        return self.async_abort(reason="unknown_option")
+
+    async def async_step_add_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Fetch tenants and let user select one to add as a new device."""
+        # Initialize API client with stored credentials from the existing entry
+        if self._api_client is None:
+            self._client_id = self._config_entry.data.get(CONF_CLIENT_ID)
+            self._client_secret = self._config_entry.data.get(CONF_CLIENT_SECRET)
+            access_token = self._config_entry.data.get(CONF_ACCESS_TOKEN)
+            refresh_token = self._config_entry.data.get(CONF_REFRESH_TOKEN)
+            token_expires_str = self._config_entry.data.get(CONF_TOKEN_EXPIRES)
+            existing_tenant_id = self._config_entry.data.get(CONF_TENANT_ID)
+            existing_region = self._config_entry.data.get(CONF_REGION, DEFAULT_REGION)
+            
+            if not self._client_id or not self._client_secret:
+                return self.async_abort(reason="missing_credentials")
+            
+            # Parse token expiry if available
+            token_expires = None
+            if token_expires_str:
+                try:
+                    from datetime import datetime
+                    token_expires = datetime.fromisoformat(token_expires_str)
+                except (ValueError, TypeError):
+                    _LOGGER.warning("Failed to parse token expiry: %s", token_expires_str)
+            
+            session = async_get_clientsession(self.hass)
+            # Create client with existing tenant/region and tokens for initial auth
+            self._api_client = TradosAPIClient(
+                session=session,
+                client_id=self._client_id,
+                client_secret=self._client_secret,
+                tenant_id=existing_tenant_id,
+                region=existing_region,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                token_expires=token_expires,
+            )
+        
+        # Fetch available tenants if not already done
+        if not self._available_tenants:
+            try:
+                accounts = await self._api_client.list_my_accounts()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.exception("Failed to fetch accounts: %s", err)
+                return self.async_abort(reason="user_fetch_failed")
+            
+            for acc in accounts:
+                tenant_id = acc.get("id")
+                if not tenant_id:
+                    continue
+                
+                name = acc.get("name") or tenant_id
+                region = acc.get("regionCode") or DEFAULT_REGION
+                self._available_tenants.append({"id": tenant_id, "name": name, "region": region})
+            
+            self._available_tenants.sort(key=lambda t: (t["name"] or "").lower())
+            
+            if not self._available_tenants:
+                return self.async_abort(reason="no_tenants")
+        
+        # Handle user selection
+        errors: dict[str, str] = {}
+        if user_input:
+            tenant_id = user_input.get(CONF_TENANT_ID)
+            tenant = next((t for t in self._available_tenants if t["id"] == tenant_id), None)
+            if tenant:
+                return await self._async_create_device_entry(tenant)
+            errors["base"] = "tenant_invalid"
+        
+        # Show tenant selection form
+        def _label(tenant: dict[str, Any]) -> str:
+            region = tenant.get("region") or "?"
+            return f"{tenant['name']} [{region}] ({tenant['id']})"
+        
+        tenant_options = {t["id"]: _label(t) for t in self._available_tenants}
+        
+        return self.async_show_form(
+            step_id="add_device",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_TENANT_ID): vol.In(tenant_options),
+                }
+            ),
+            errors=errors,
+        )
+    
+    async def _async_create_device_entry(self, tenant: dict[str, Any]) -> FlowResult:
+        """Add a new tenant to the existing config entry."""
+        self._tenant_id = tenant["id"]
+        self._region = tenant.get("region") or DEFAULT_REGION
+        tenant_name = tenant.get("name") or self._tenant_id
+        
+        # Get existing tenants list from the config entry
+        # If no tenants list exists, migrate from single tenant format
+        existing_tenants = list(self._config_entry.data.get("tenants", []))
+        if not existing_tenants and self._config_entry.data.get(CONF_TENANT_ID):
+            # Migrate old single-tenant format to new multi-tenant format
+            existing_tenants = [
+                {
+                    "id": self._config_entry.data[CONF_TENANT_ID],
+                    "name": self._config_entry.data.get("tenant_name", self._config_entry.data[CONF_TENANT_ID]),
+                    "region": self._config_entry.data.get(CONF_REGION, DEFAULT_REGION),
+                }
+            ]
+        
+        # Check if this tenant is already configured
+        for existing_tenant in existing_tenants:
+            if existing_tenant.get("id") == self._tenant_id:
+                _LOGGER.info("Tenant %s already configured", self._tenant_id)
+                return self.async_abort(reason="already_configured")
+        
+        # Add the new tenant to the list
+        new_tenant_data = {
+            "id": self._tenant_id,
+            "name": tenant_name,
+            "region": self._region,
+        }
+        
+        updated_tenants = existing_tenants + [new_tenant_data]
+        
+        _LOGGER.info("Updating config entry with %d tenants: %s", len(updated_tenants), [t["name"] for t in updated_tenants])
+        
+        # Update the config entry with the new tenant list
+        new_data = {**self._config_entry.data, "tenants": updated_tenants}
+        
+        self.hass.config_entries.async_update_entry(
+            self._config_entry,
+            data=new_data,
+        )
+        
+        _LOGGER.info("Config entry updated - integration will reload automatically via update listener")
+        
+        # Close the options flow - the update listener will trigger a reload
+        return self.async_create_entry(title="", data={})
+
+    async def async_step_set_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Adjust integration options such as scan interval."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current_interval = self.config_entry.data.get(
+        current_interval = self._config_entry.data.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL.total_seconds() / 60
         )
 
         return self.async_show_form(
-            step_id="init",
+            step_id="set_options",
             data_schema=vol.Schema(
                 {
                     vol.Optional(

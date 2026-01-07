@@ -44,12 +44,22 @@
       "timeout": "Authorization timed out. Please try again.",
       "auth_state_missing": "Authorization state is missing. Please restart setup.",
       "user_fetch_failed": "Signed in, but could not load your user profile or accounts.",
-      "no_tenants": "No tenants were found for this user."
+      "no_tenants": "No tenants were found for this user.",
+      "add_device_started": "Started a new device setup. Complete the new flow to add another tenant.",
+      "unknown_option": "Unknown menu option. Please try again."
     }
   },
   "options": {
     "step": {
       "init": {
+        "title": "Trados Cloud",
+        "description": "Select an action",
+        "menu_options": {
+          "add_device": "Add another tenant/device",
+          "set_options": "Adjust options"
+        }
+      },
+      "set_options": {
         "title": "Trados Enterprise Options",
         "data": {
           "scan_interval": "Update Interval (minutes)"

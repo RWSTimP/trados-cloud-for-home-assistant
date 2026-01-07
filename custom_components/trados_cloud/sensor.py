@@ -30,17 +30,19 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Trados Enterprise sensors from a config entry."""
-    coordinator: TradosDataCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinators: list[TradosDataCoordinator] = hass.data[DOMAIN][entry.entry_id]["coordinators"]
 
-    # Create all sensor entities
-    entities = [
-        TradosTotalTasksSensor(coordinator, entry),
-        TradosTasksByStatusSensor(coordinator, entry, "created", SENSOR_TASKS_CREATED),
-        TradosTasksByStatusSensor(coordinator, entry, "inProgress", SENSOR_TASKS_IN_PROGRESS),
-        TradosTasksByStatusSensor(coordinator, entry, "completed", SENSOR_TASKS_COMPLETED),
-        TradosOverdueTasksSensor(coordinator, entry),
-        TradosTotalWordsSensor(coordinator, entry),
-    ]
+    # Create sensor entities for each coordinator (tenant)
+    entities = []
+    for coordinator in coordinators:
+        entities.extend([
+            TradosTotalTasksSensor(coordinator, entry),
+            TradosTasksByStatusSensor(coordinator, entry, "created", SENSOR_TASKS_CREATED),
+            TradosTasksByStatusSensor(coordinator, entry, "inProgress", SENSOR_TASKS_IN_PROGRESS),
+            TradosTasksByStatusSensor(coordinator, entry, "completed", SENSOR_TASKS_COMPLETED),
+            TradosOverdueTasksSensor(coordinator, entry),
+            TradosTotalWordsSensor(coordinator, entry),
+        ])
 
     async_add_entities(entities)
 
@@ -57,22 +59,23 @@ class TradosBaseSensor(CoordinatorEntity[TradosDataCoordinator], SensorEntity):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.entry_id}_{sensor_type}"
+        tenant_id = coordinator.client.tenant_id
+        tenant_name = coordinator.tenant_name or "Trados Cloud"
+        region = coordinator.client.region
+        
+        self._attr_unique_id = f"{entry.entry_id}_{tenant_id}_{sensor_type}"
         self._attr_has_entity_name = True
         self._attr_name = name
         self._sensor_type = sensor_type
 
-        region = entry.data.get("region", "eu")
-        tenant_id = entry.data.get("tenant_id", "")
-        tenant_name = entry.data.get("tenant_name") or "Trados Cloud"
         config_url = TRADOS_PORTAL_URL_TEMPLATE.format(region=region, tenant_id=tenant_id)
 
-        # Device info to group all sensors together
+        # Device info - create a device per tenant
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
+            "identifiers": {(DOMAIN, f"{entry.entry_id}_{tenant_id}")},
             "name": tenant_name,
             "manufacturer": "RWS",
-            "model": "Trados Enterprise",
+            "model": "Trados Assignments",
             "entry_type": "service",
             "configuration_url": config_url,
         }
