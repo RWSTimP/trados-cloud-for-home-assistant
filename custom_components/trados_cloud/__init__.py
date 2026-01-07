@@ -47,19 +47,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     scan_interval = timedelta(minutes=scan_interval_minutes)
 
-    # Get list of tenants (new multi-tenant structure)
+    # Get list of tenants
     tenants = entry.data.get("tenants", [])
     
-    # Fallback to single tenant for backward compatibility
     if not tenants:
-        _LOGGER.debug("No tenants list found, migrating from single tenant format")
-        tenants = [
-            {
-                "id": entry.data[CONF_TENANT_ID],
-                "name": entry.data.get("tenant_name", entry.data[CONF_TENANT_ID]),
-                "region": entry.data.get(CONF_REGION, "eu"),
-            }
-        ]
+        _LOGGER.error("No tenants configured in entry data")
+        return False
     
     _LOGGER.info("Setting up integration for %d tenant(s): %s", len(tenants), [t.get("name") for t in tenants])
 

@@ -123,18 +123,18 @@ class TradosDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if "statistics" in source_file:
                         stats = source_file["statistics"]
                         # Look for word count in various stat fields
-                        total_words += stats.get("words", 0)
-                        total_words += stats.get("totalWords", 0)
+                        total_words += int(stats.get("words", 0) or 0)
+                        total_words += int(stats.get("totalWords", 0) or 0)
 
                 # Check target file statistics
                 if "targetFile" in file_data:
                     target_file = file_data["targetFile"]
                     if "statistics" in target_file:
                         stats = target_file["statistics"]
-                        total_words += stats.get("words", 0)
-                        total_words += stats.get("totalWords", 0)
+                        total_words += int(stats.get("words", 0) or 0)
+                        total_words += int(stats.get("totalWords", 0) or 0)
 
-            return total_words
+            return int(total_words)
 
         except (KeyError, TypeError, AttributeError) as err:
             _LOGGER.debug("Could not extract word count from task %s: %s", task.get("id"), err)

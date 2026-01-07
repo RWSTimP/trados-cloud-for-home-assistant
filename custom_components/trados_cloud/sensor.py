@@ -93,7 +93,7 @@ class TradosTotalTasksSensor(TradosBaseSensor):
     @property
     def native_value(self) -> int:
         """Return the state of the sensor."""
-        return self.coordinator.data.get("total_tasks", 0)
+        return int(self.coordinator.data.get("total_tasks", 0))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -101,9 +101,9 @@ class TradosTotalTasksSensor(TradosBaseSensor):
         tasks = self.coordinator.data.get("tasks", [])
         last_update = self.coordinator.data.get("last_update")
 
-        # Get upcoming tasks (due in next 48 hours)
+        # Count upcoming tasks (due in next 48 hours)
         now = datetime.now()
-        upcoming_tasks = []
+        upcoming_count = 0
 
         for task in tasks:
             if task["status"] not in ["completed", "canceled", "skipped"]:
@@ -112,17 +112,13 @@ class TradosTotalTasksSensor(TradosBaseSensor):
                         due_date = datetime.fromisoformat(task["due_by"].replace("Z", "+00:00"))
                         hours_until_due = (due_date - now).total_seconds() / 3600
                         if 0 < hours_until_due <= 48:
-                            upcoming_tasks.append({
-                                "name": task["name"],
-                                "due_by": task["due_by"],
-                                "project": task["project_name"],
-                            })
+                            upcoming_count += 1
                     except (ValueError, AttributeError):
                         pass
 
         return {
             "last_update": last_update,
-            "upcoming_tasks": upcoming_tasks[:5],  # Limit to 5
+            "upcoming_tasks_count": upcoming_count,
             "tasks_by_project": self._count_by_project(tasks),
         }
 
@@ -169,28 +165,18 @@ class TradosTasksByStatusSensor(TradosBaseSensor):
     def native_value(self) -> int:
         """Return the state of the sensor."""
         tasks_by_status = self.coordinator.data.get("tasks_by_status", {})
-        return tasks_by_status.get(self._status, 0)
+        return int(tasks_by_status.get(self._status, 0))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
         tasks = self.coordinator.data.get("tasks", [])
 
-        # Get tasks with this status
-        filtered_tasks = [
-            {
-                "name": task["name"],
-                "project": task["project_name"],
-                "due_by": task.get("due_by"),
-                "task_type": task.get("task_type"),
-            }
-            for task in tasks
-            if task["status"] == self._status
-        ]
+        # Count tasks with this status
+        task_count = sum(1 for task in tasks if task["status"] == self._status)
 
         return {
-            "tasks": filtered_tasks[:10],  # Limit to 10
-            "total_count": len(filtered_tasks),
+            "total_count": task_count,
         }
 
 
@@ -206,7 +192,7 @@ class TradosOverdueTasksSensor(TradosBaseSensor):
     @property
     def native_value(self) -> int:
         """Return the state of the sensor."""
-        return self.coordinator.data.get("overdue_tasks", 0)
+        return int(self.coordinator.data.get("overdue_tasks", 0))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -214,7 +200,9 @@ class TradosOverdueTasksSensor(TradosBaseSensor):
         tasks = self.coordinator.data.get("tasks", [])
         now = datetime.now()
 
-        overdue_tasks = []
+        overdue_count = 0
+        max_hours_overdue = 0
+
         for task in tasks:
             if task["status"] not in ["completed", "canceled", "skipped"]:
                 if task.get("due_by"):
@@ -222,20 +210,14 @@ class TradosOverdueTasksSensor(TradosBaseSensor):
                         due_date = datetime.fromisoformat(task["due_by"].replace("Z", "+00:00"))
                         if due_date < now:
                             hours_overdue = (now - due_date).total_seconds() / 3600
-                            overdue_tasks.append({
-                                "name": task["name"],
-                                "project": task["project_name"],
-                                "due_by": task["due_by"],
-                                "hours_overdue": round(hours_overdue, 1),
-                            })
+                            overdue_count += 1
+                            max_hours_overdue = max(max_hours_overdue, hours_overdue)
                     except (ValueError, AttributeError):
                         pass
 
-        # Sort by most overdue first
-        overdue_tasks.sort(key=lambda x: x["hours_overdue"], reverse=True)
-
         return {
-            "tasks": overdue_tasks[:10],  # Limit to 10
+            "total_count": overdue_count,
+            "max_hours_overdue": round(max_hours_overdue, 1) if max_hours_overdue > 0 else 0,
         }
 
 
@@ -252,7 +234,7 @@ class TradosTotalWordsSensor(TradosBaseSensor):
     @property
     def native_value(self) -> int:
         """Return the state of the sensor."""
-        return self.coordinator.data.get("total_words", 0)
+        return int(self.coordinator.data.get("total_words", 0))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -268,7 +250,7 @@ class TradosTotalWordsSensor(TradosBaseSensor):
 
         for task in tasks:
             status = task.get("status")
-            word_count = task.get("word_count", 0)
+            word_count = int(task.get("word_count", 0) or 0)
             if status in words_by_status and word_count:
                 words_by_status[status] += word_count
 

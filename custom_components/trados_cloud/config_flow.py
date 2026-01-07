@@ -11,6 +11,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_NAME, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 
@@ -87,17 +88,6 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step - collect credentials."""
-        # Check if this is coming from options flow with pre-configured data
-        if user_input and "entry_data" in user_input:
-            entry_data = user_input["entry_data"]
-            title = user_input["title"]
-            unique_id = user_input["unique_id"]
-            
-            await self.async_set_unique_id(unique_id)
-            self._abort_if_unique_id_configured()
-            
-            return self.async_create_entry(title=title, data=entry_data)
-        
         errors: dict[str, str] = {}
 
         global_data = await self._load_global()
@@ -393,15 +383,12 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_NAME: self._name,
             CONF_CLIENT_ID: self._client_id,
             CONF_CLIENT_SECRET: self._client_secret,
-            CONF_TENANT_ID: self._tenant_id,  # Keep for backward compatibility
-            CONF_REGION: self._region,  # Keep for backward compatibility
             CONF_SCAN_INTERVAL: self._scan_interval,
             CONF_ACCESS_TOKEN: self._api_client._token,
             CONF_REFRESH_TOKEN: self._api_client._refresh_token,
             CONF_TOKEN_EXPIRES: token_expires,
-            "tenant_name": tenant.get("name"),  # Keep for backward compatibility
             "user_display_name": self._user_display_name,
-            "tenants": tenants,  # New multi-tenant structure
+            "tenants": tenants,
         }
 
         return self.async_create_entry(title=title, data=entry_data)
@@ -438,12 +425,14 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is None:
             return self.async_show_menu(
                 step_id="init",
-                menu_options=["add_device", "set_options"],
+                menu_options=["add_device", "remove_device", "set_options"],
             )
 
         option = user_input.get("next_step") or user_input
         if option == "add_device":
             return await self.async_step_add_device()
+        if option == "remove_device":
+            return await self.async_step_remove_device()
         if option == "set_options":
             return await self.async_step_set_options()
 
@@ -543,17 +532,7 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
         tenant_name = tenant.get("name") or self._tenant_id
         
         # Get existing tenants list from the config entry
-        # If no tenants list exists, migrate from single tenant format
         existing_tenants = list(self._config_entry.data.get("tenants", []))
-        if not existing_tenants and self._config_entry.data.get(CONF_TENANT_ID):
-            # Migrate old single-tenant format to new multi-tenant format
-            existing_tenants = [
-                {
-                    "id": self._config_entry.data[CONF_TENANT_ID],
-                    "name": self._config_entry.data.get("tenant_name", self._config_entry.data[CONF_TENANT_ID]),
-                    "region": self._config_entry.data.get(CONF_REGION, DEFAULT_REGION),
-                }
-            ]
         
         # Check if this tenant is already configured
         for existing_tenant in existing_tenants:
@@ -584,6 +563,73 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
         
         # Close the options flow - the update listener will trigger a reload
         return self.async_create_entry(title="", data={})
+
+    async def async_step_remove_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Remove a tenant device from the integration."""
+        # Get existing tenants list from the config entry
+        existing_tenants = list(self._config_entry.data.get("tenants", []))
+        
+        # Check if there's only one tenant - can't delete the last one
+        if len(existing_tenants) <= 1:
+            return self.async_abort(reason="cannot_remove_last_device")
+        
+        # Handle user selection
+        errors: dict[str, str] = {}
+        if user_input:
+            tenant_id = user_input.get(CONF_TENANT_ID)
+            # Remove the selected tenant
+            updated_tenants = [t for t in existing_tenants if t.get("id") != tenant_id]
+            
+            if len(updated_tenants) == len(existing_tenants):
+                errors["base"] = "tenant_not_found"
+            else:
+                _LOGGER.info("Removing tenant %s, %d tenant(s) remaining", tenant_id, len(updated_tenants))
+                _LOGGER.debug("Updated tenants list: %s", [t["name"] for t in updated_tenants])
+                
+                # Remove the device from the device registry
+                device_reg = dr.async_get(self.hass)
+                device_identifier = f"{self._config_entry.entry_id}_{tenant_id}"
+                device = device_reg.async_get_device(
+                    identifiers={(DOMAIN, device_identifier)}
+                )
+                if device:
+                    _LOGGER.info("Removing device %s from registry", device.id)
+                    device_reg.async_remove_device(device.id)
+                else:
+                    _LOGGER.warning("Device for tenant %s not found in registry (identifier: %s)", tenant_id, device_identifier)
+                
+                # Update the config entry with the new tenant list
+                new_data = {**self._config_entry.data, "tenants": updated_tenants}
+                
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    data=new_data,
+                )
+                
+                _LOGGER.info("Config entry updated, update listener will trigger reload")
+                
+                # Close the options flow (update listener handles reload)
+                return self.async_create_entry(title="", data={})
+        
+        # Show tenant selection form
+        def _label(tenant: dict[str, Any]) -> str:
+            region = tenant.get("region") or "?"
+            return f"{tenant['name']} [{region}] ({tenant['id']})"
+        
+        tenant_options = {t["id"]: _label(t) for t in existing_tenants}
+        
+        return self.async_show_form(
+            step_id="remove_device",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_TENANT_ID): vol.In(tenant_options),
+                }
+            ),
+            errors=errors,
+            description_placeholders={"count": str(len(existing_tenants))},
+        )
 
     async def async_step_set_options(
         self, user_input: dict[str, Any] | None = None

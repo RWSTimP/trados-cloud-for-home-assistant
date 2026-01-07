@@ -46,7 +46,8 @@
       "user_fetch_failed": "Signed in, but could not load your user profile or accounts.",
       "no_tenants": "No tenants were found for this user.",
       "add_device_started": "Started a new device setup. Complete the new flow to add another tenant.",
-      "unknown_option": "Unknown menu option. Please try again."
+      "unknown_option": "Unknown menu option. Please try again.",
+      "cannot_remove_last_device": "Cannot remove the last tenant. At least one tenant must remain."
     }
   },
   "options": {
@@ -55,8 +56,16 @@
         "title": "Trados Cloud",
         "description": "Select an action",
         "menu_options": {
-          "add_device": "Add another tenant/device",
+          "add_device": "Add another tenant",
+          "remove_device": "Remove a tenant",
           "set_options": "Adjust options"
+        }
+      },
+      "remove_device": {
+        "title": "Remove Tenant",
+        "description": "Select a tenant to remove. You currently have {count} tenant(s) configured.",
+        "data": {
+          "tenant_id": "Tenant to remove"
         }
       },
       "set_options": {
