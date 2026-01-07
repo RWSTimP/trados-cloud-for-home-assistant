@@ -5,16 +5,18 @@
         "title": "Trados Cloud",
         "description": "Enter your Trados Cloud API credentials.",
         "data": {
+          "name": "Username",
           "client_id": "Client ID",
           "client_secret": "Client Secret",
-          "tenant_id": "Tenant ID",
+          "tenant_id": "Tenant ID (optional)",
           "region": "Region",
           "scan_interval": "Update Interval (minutes)"
         },
         "data_description": {
+          "name": "A simple label so you can identify whose inbox this instance represents (allows multiple per tenant)",
           "client_id": "The Client ID from your Trados Enterprise application",
           "client_secret": "The Client Secret from your Trados Enterprise application",
-          "tenant_id": "Your Trados Account ID (looks like: 2ef3c10e74fc39104e633c11)",
+          "tenant_id": "Optional: if left blank, you'll pick a tenant after signing in (looks like: 2ef3c10e74fc39104e633c11)",
           "region": "API region (eu, us, etc.)",
           "scan_interval": "How often to check for updates (default: 15 minutes)"
         }
@@ -22,6 +24,13 @@
       "authorize": {
         "title": "Authorize with Trados",
         "description": "Click the link below to open the authorization page in a new tab. After authorizing with your Trados credentials, click Submit below to continue."
+      },
+      "select_tenant": {
+        "title": "Choose Tenant",
+        "description": "Signed in as {user}. Select which tenant/account to use for this instance.",
+        "data": {
+          "tenant_id": "Tenant"
+        }
       }
     },
     "progress": {
@@ -31,13 +40,17 @@
       "auth_failed": "Authentication failed. Please check your credentials.",
       "connection_failed": "Unable to connect to Trados Enterprise API.",
       "invalid_region": "Invalid region specified.",
+      "tenant_invalid": "Please choose a tenant from the list.",
       "unknown": "An unexpected error occurred."
     },
     "abort": {
       "already_configured": "This Trados Cloud account is already configured.",
       "device_code_expired": "Authorization timed out. Please try again.",
       "authorization_denied": "Authorization was denied.",
-      "timeout": "Authorization timed out. Please try again."
+      "timeout": "Authorization timed out. Please try again.",
+      "auth_state_missing": "Authorization state is missing. Please restart setup.",
+      "user_fetch_failed": "Signed in, but could not load your user profile or accounts.",
+      "no_tenants": "No tenants were found for this user."
     }
   },
   "options": {

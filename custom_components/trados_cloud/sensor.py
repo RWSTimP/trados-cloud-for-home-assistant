@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
+    TRADOS_PORTAL_URL_TEMPLATE,
     SENSOR_OVERDUE_TASKS,
     SENSOR_TASKS_COMPLETED,
     SENSOR_TASKS_CREATED,
@@ -61,6 +62,10 @@ class TradosBaseSensor(CoordinatorEntity[TradosDataCoordinator], SensorEntity):
         self._attr_name = name
         self._sensor_type = sensor_type
 
+        region = entry.data.get("region", "eu")
+        tenant_id = entry.data.get("tenant_id", "")
+        config_url = TRADOS_PORTAL_URL_TEMPLATE.format(region=region, tenant_id=tenant_id)
+
         # Device info to group all sensors together
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
@@ -68,6 +73,7 @@ class TradosBaseSensor(CoordinatorEntity[TradosDataCoordinator], SensorEntity):
             "manufacturer": "RWS",
             "model": "Trados Enterprise",
             "entry_type": "service",
+            "configuration_url": config_url,
         }
 
 

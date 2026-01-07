@@ -15,6 +15,7 @@ from .const import (
     CONF_CLIENT_SECRET,
     CONF_REGION,
     CONF_TENANT_ID,
+    GLOBAL_API_BASE_URL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -219,6 +220,8 @@ class TradosAPIClient:
         self,
         method: str,
         endpoint: str,
+        *,
+        base_url: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Make an authenticated request to the Trados API."""
@@ -227,11 +230,12 @@ class TradosAPIClient:
 
         headers = {
             "Authorization": f"Bearer {token}",
-            "X-LC-Tenant": self.tenant_id,
             "Content-Type": "application/json",
         }
+        if self.tenant_id:
+            headers["X-LC-Tenant"] = self.tenant_id
 
-        url = f"{self.base_url}{endpoint}"
+        url = f"{(base_url or self.base_url)}{endpoint}"
         _LOGGER.debug("Full URL: %s", url)
 
         try:
@@ -272,6 +276,22 @@ class TradosAPIClient:
         except aiohttp.ClientError as err:
             _LOGGER.error("Network error during API request: %s", err)
             raise TradosAPIError(f"Network error: {err}") from err
+
+    async def get_my_user(self) -> dict[str, Any]:
+        """Get current user profile."""
+        data = await self._make_request("GET", "/users/me")
+        _LOGGER.debug("get_my_user response: %s", data)
+        return data
+
+    async def list_my_accounts(self) -> list[dict[str, Any]]:
+        """List accounts/tenants accessible to the current user."""
+        data = await self._make_request("GET", "/accounts", base_url=GLOBAL_API_BASE_URL)
+        _LOGGER.debug("list_my_accounts raw response: %s", data)
+        if isinstance(data, dict) and "items" in data:
+            return data.get("items", [])
+        if isinstance(data, list):
+            return data
+        return []
 
     async def get_assigned_tasks(self) -> list[dict[str, Any]]:
         """Get all tasks assigned to the authenticated user."""

@@ -25,7 +25,9 @@ AUTH0_DEVICE_CODE_URL = f"https://{AUTH0_DOMAIN}/oauth/device/code"
 
 # API Endpoints
 API_BASE_URL = "https://api.{region}.cloud.trados.com/public-api/v1"
+GLOBAL_API_BASE_URL = "https://api.cloud.trados.com/public-api/v1"
 API_AUDIENCE = "https://api.sdl.com"
+TRADOS_PORTAL_URL_TEMPLATE = "https://{region}.cloud.trados.com/lc/t/{tenant_id}/dashboard"
 
 # Task Statuses
 TASK_STATUS_CREATED = "created"

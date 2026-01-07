@@ -3,6 +3,7 @@
   "name": "Trados Cloud",
   "codeowners": ["@yourusername"],
   "config_flow": true,
+  "configuration_url": "https://cloud.trados.com",
   "dependencies": [],
   "documentation": "https://github.com/yourusername/trados-enterprise-ha",
   "integration_type": "service",
