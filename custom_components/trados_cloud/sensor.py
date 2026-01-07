@@ -1,9 +1,9 @@
 """Sensor platform for Trados Enterprise integration."""
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -18,6 +18,7 @@ from .const import (
     SENSOR_TASKS_IN_PROGRESS,
     SENSOR_TOTAL_TASKS,
     SENSOR_TOTAL_WORDS,
+    SENSOR_NEXT_DUE_DATE,
 )
 from .coordinator import TradosDataCoordinator
 
@@ -42,6 +43,7 @@ async def async_setup_entry(
             TradosTasksByStatusSensor(coordinator, entry, "completed", SENSOR_TASKS_COMPLETED),
             TradosOverdueTasksSensor(coordinator, entry),
             TradosTotalWordsSensor(coordinator, entry),
+            TradosNextDueDateSensor(coordinator, entry),
         ])
 
     async_add_entities(entities)
@@ -102,7 +104,7 @@ class TradosTotalTasksSensor(TradosBaseSensor):
         last_update = self.coordinator.data.get("last_update")
 
         # Count upcoming tasks (due in next 48 hours)
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         upcoming_count = 0
 
         for task in tasks:
@@ -198,7 +200,7 @@ class TradosOverdueTasksSensor(TradosBaseSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
         tasks = self.coordinator.data.get("tasks", [])
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         overdue_count = 0
         max_hours_overdue = 0
@@ -258,4 +260,69 @@ class TradosTotalWordsSensor(TradosBaseSensor):
             "words_pending": words_by_status["created"],
             "words_in_progress": words_by_status["inProgress"],
             "words_completed": words_by_status["completed"],
+        }
+
+
+class TradosNextDueDateSensor(TradosBaseSensor):
+    """Sensor for next task due date."""
+
+    def __init__(self, coordinator: TradosDataCoordinator, entry: ConfigEntry) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, SENSOR_NEXT_DUE_DATE, "Next Due Date")
+        self._attr_icon = "mdi:calendar-clock"
+        self._attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the earliest due date for non-completed tasks."""
+        tasks = self.coordinator.data.get("tasks", [])
+        earliest_due = None
+
+        for task in tasks:
+            status = task.get("status")
+            if status not in ["completed", "canceled", "skipped"]:
+                due_by = task.get("due_by")
+                if due_by:
+                    try:
+                        due_date = datetime.fromisoformat(due_by.replace("Z", "+00:00"))
+                        if earliest_due is None or due_date < earliest_due:
+                            earliest_due = due_date
+                    except (ValueError, AttributeError):
+                        pass
+
+        return earliest_due
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        tasks = self.coordinator.data.get("tasks", [])
+        
+        # Count tasks due in next 24, 48, and 72 hours
+        now = datetime.now(timezone.utc)
+        due_24h = 0
+        due_48h = 0
+        due_72h = 0
+
+        for task in tasks:
+            status = task.get("status")
+            if status not in ["completed", "canceled", "skipped"]:
+                due_by = task.get("due_by")
+                if due_by:
+                    try:
+                        due_date = datetime.fromisoformat(due_by.replace("Z", "+00:00"))
+                        hours_until_due = (due_date - now).total_seconds() / 3600
+                        
+                        if 0 < hours_until_due <= 24:
+                            due_24h += 1
+                        if 0 < hours_until_due <= 48:
+                            due_48h += 1
+                        if 0 < hours_until_due <= 72:
+                            due_72h += 1
+                    except (ValueError, AttributeError):
+                        pass
+
+        return {
+            "due_within_24h": due_24h,
+            "due_within_48h": due_48h,
+            "due_within_72h": due_72h,
         }

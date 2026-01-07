@@ -303,17 +303,20 @@ class TradosAPIClient:
         top = 100  # Max items per page
 
         while True:
-            # Remove the fields parameter for now - we'll add back what we need once we test
+            # Include fields parameter to get specific input fields and dueBy
             params = {
                 "top": top,
                 "skip": skip,
+                "fields": "status,taskType,input.type,input.targetFile.analysisStatistics,input.targetFile.sourceFile.totalWords,dueBy",
             }
 
             try:
                 data = await self._make_request("GET", "/tasks/assigned", params=params)
+                _LOGGER.debug("Response from /tasks/assigned (skip=%s): %s", skip, data)
             except TradosAuthError:
                 # Retry once on auth error
                 data = await self._make_request("GET", "/tasks/assigned", params=params)
+                _LOGGER.debug("Response from /tasks/assigned (skip=%s, retry): %s", skip, data)
 
             items = data.get("items", [])
             all_tasks.extend(items)

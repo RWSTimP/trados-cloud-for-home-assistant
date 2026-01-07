@@ -1,5 +1,5 @@
 """Data coordinator for Trados Enterprise integration."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Any
 
@@ -48,7 +48,7 @@ class TradosDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _process_tasks(self, tasks: list[dict[str, Any]]) -> dict[str, Any]:
         """Process raw task data into organized structure."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Initialize counters
         total_tasks = len(tasks)
@@ -110,32 +110,18 @@ class TradosDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _extract_word_count(self, task: dict[str, Any]) -> int:
         """Extract word count from task input data."""
-        # Try to get word count from various possible locations in the task structure
+        # Get totalWords from input.targetFile.totalWords when input.type = "targetFile"
         try:
-            # Check input files for word counts
-            input_files = task.get("inputFiles", [])
-            total_words = 0
+            input_data = task.get("input", {})
+            input_type = input_data.get("type")
+            
+            if input_type == "targetFile":
+                target_file = input_data.get("targetFile", {})
+                total_words = target_file.get("totalWords", 0)
+                return int(total_words) if total_words else 0
+            
+            return 0
 
-            for file_data in input_files:
-                # Check source file statistics
-                if "sourceFile" in file_data:
-                    source_file = file_data["sourceFile"]
-                    if "statistics" in source_file:
-                        stats = source_file["statistics"]
-                        # Look for word count in various stat fields
-                        total_words += int(stats.get("words", 0) or 0)
-                        total_words += int(stats.get("totalWords", 0) or 0)
-
-                # Check target file statistics
-                if "targetFile" in file_data:
-                    target_file = file_data["targetFile"]
-                    if "statistics" in target_file:
-                        stats = target_file["statistics"]
-                        total_words += int(stats.get("words", 0) or 0)
-                        total_words += int(stats.get("totalWords", 0) or 0)
-
-            return int(total_words)
-
-        except (KeyError, TypeError, AttributeError) as err:
+        except (KeyError, TypeError, AttributeError, ValueError) as err:
             _LOGGER.debug("Could not extract word count from task %s: %s", task.get("id"), err)
             return 0
