@@ -64,12 +64,13 @@ class TradosBaseSensor(CoordinatorEntity[TradosDataCoordinator], SensorEntity):
 
         region = entry.data.get("region", "eu")
         tenant_id = entry.data.get("tenant_id", "")
+        tenant_name = entry.data.get("tenant_name") or "Trados Cloud"
         config_url = TRADOS_PORTAL_URL_TEMPLATE.format(region=region, tenant_id=tenant_id)
 
         # Device info to group all sensors together
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": "Trados Enterprise",
+            "name": tenant_name,
             "manufacturer": "RWS",
             "model": "Trados Enterprise",
             "entry_type": "service",

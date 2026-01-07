@@ -16,6 +16,7 @@ from homeassistant.helpers.storage import Store
 
 from .api import TradosAPIClient, TradosAuthError
 from .const import (
+    API_BASE_URL,
     CONF_ACCESS_TOKEN,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
@@ -56,7 +57,7 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._client_secret: str | None = None
         self._tenant_id: str | None = None
         self._name: str = ""
-        self._region: str = DEFAULT_REGION
+        self._region: str | None = None
         self._scan_interval: float = DEFAULT_SCAN_INTERVAL.total_seconds() / 60
         self._device_code: str | None = None
         self._user_code: str | None = None
@@ -91,17 +92,17 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         global_data = await self._load_global()
         default_client_id = global_data.get(CONF_CLIENT_ID, self._defaults.get("client_id", ""))
         default_client_secret = global_data.get(CONF_CLIENT_SECRET, self._defaults.get("client_secret", ""))
-        default_region = global_data.get(CONF_REGION, self._defaults.get("region", DEFAULT_REGION))
 
-        # If globals exist, we won't require client_id/secret; otherwise, we will.
-        require_client_fields = not (default_client_id and default_client_secret)
+        # If globals exist, we can skip directly to authorization
+        if default_client_id and default_client_secret and user_input is None:
+            self._client_id = default_client_id
+            self._client_secret = default_client_secret
+            self._scan_interval = DEFAULT_SCAN_INTERVAL.total_seconds() / 60
+            return await self.async_step_authorize()
 
         if user_input is not None:
             self._client_id = user_input.get(CONF_CLIENT_ID, default_client_id)
             self._client_secret = user_input.get(CONF_CLIENT_SECRET, default_client_secret)
-            self._tenant_id = user_input.get(CONF_TENANT_ID, "")
-            self._name = user_input[CONF_NAME]
-            self._region = user_input.get(CONF_REGION, default_region)
             self._scan_interval = user_input.get(
                 CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL.total_seconds() / 60
             )
@@ -109,60 +110,22 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Persist global client credentials for reuse
             global_data[CONF_CLIENT_ID] = self._client_id
             global_data[CONF_CLIENT_SECRET] = self._client_secret
-            global_data[CONF_REGION] = self._region
             self._global_data = global_data
             await self._save_global()
 
-            # Create API client and start device flow
-            session = async_get_clientsession(self.hass)
-            self._api_client = TradosAPIClient(
-                session=session,
-                client_id=self._client_id,
-                client_secret=self._client_secret,
-                tenant_id=self._tenant_id,
-                region=self._region,
-            )
+            return await self.async_step_authorize()
 
-            try:
-                device_data = await self._api_client.start_device_flow()
-                self._device_code = device_data["device_code"]
-                self._user_code = device_data["user_code"]
-                self._verification_uri = device_data["verification_uri"]
-                self._verification_uri_complete = device_data.get("verification_uri_complete")
-                self._interval = device_data["interval"]
-                
-                # Use complete URI if available (includes code), otherwise show URI and code separately
-                auth_url = self._verification_uri_complete or self._verification_uri
-                _LOGGER.info("Device flow started")
-                _LOGGER.info("Authorization URL: %s", auth_url)
-                if not self._verification_uri_complete:
-                    _LOGGER.info("User code: %s", self._user_code)
-                
-                return await self.async_step_authorize()
-                
-            except TradosAuthError as err:
-                _LOGGER.error("Failed to start device flow: %s", err)
-                errors["base"] = "auth_failed"
-            except Exception as err:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected error: %s", err)
-                errors["base"] = "unknown"
-
-        # Show credential form with defaults from .credentials.json if available
-        schema_dict: dict[Any, Any] = {
-            vol.Required(CONF_NAME, default=""): str,
-            vol.Optional(CONF_TENANT_ID, default=self._defaults.get("tenant_id", "")): str,
-            vol.Optional(CONF_REGION, default=default_region): str,
-            vol.Optional(
-                CONF_SCAN_INTERVAL,
-                default=DEFAULT_SCAN_INTERVAL.total_seconds() / 60,
-            ): vol.All(vol.Coerce(int), vol.Range(min=5, max=120)),
-        }
-
-        if require_client_fields:
-            schema_dict[vol.Required(CONF_CLIENT_ID, default=default_client_id)] = str
-            schema_dict[vol.Required(CONF_CLIENT_SECRET, default=default_client_secret)] = str
-
-        data_schema = vol.Schema(schema_dict)
+        # Show credential form only for client credentials + scan interval
+        data_schema = vol.Schema(
+            {
+                vol.Required(CONF_CLIENT_ID, default=default_client_id): str,
+                vol.Required(CONF_CLIENT_SECRET, default=default_client_secret): str,
+                vol.Optional(
+                    CONF_SCAN_INTERVAL,
+                    default=DEFAULT_SCAN_INTERVAL.total_seconds() / 60,
+                ): vol.All(vol.Coerce(int), vol.Range(min=5, max=120)),
+            }
+        )
 
         return self.async_show_form(
             step_id="user",
@@ -177,6 +140,40 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if self._poll_result:
             # Already authorized, advance to finish
             return self.async_show_progress_done(next_step_id="select_tenant")
+
+        if not self._api_client:
+            session = async_get_clientsession(self.hass)
+            # Region is not known yet; use placeholder until tenant selection
+            placeholder_region = self._region or DEFAULT_REGION
+            self._api_client = TradosAPIClient(
+                session=session,
+                client_id=self._client_id,
+                client_secret=self._client_secret,
+                tenant_id=self._tenant_id or "",
+                region=placeholder_region,
+            )
+
+        if not self._device_code:
+            try:
+                device_data = await self._api_client.start_device_flow()
+                self._device_code = device_data["device_code"]
+                self._user_code = device_data["user_code"]
+                self._verification_uri = device_data["verification_uri"]
+                self._verification_uri_complete = device_data.get("verification_uri_complete")
+                self._interval = device_data["interval"]
+
+                auth_url = self._verification_uri_complete or self._verification_uri
+                _LOGGER.info("Device flow started")
+                _LOGGER.info("Authorization URL: %s", auth_url)
+                if not self._verification_uri_complete:
+                    _LOGGER.info("User code: %s", self._user_code)
+
+            except TradosAuthError as err:
+                _LOGGER.error("Failed to start device flow: %s", err)
+                return self.async_abort(reason="auth_failed")
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error starting device flow: %s", err)
+                return self.async_abort(reason="unknown")
 
         auth_url = self._verification_uri_complete or self._verification_uri
         _LOGGER.info("Authorization URL: %s", auth_url)
@@ -287,7 +284,11 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self._async_complete_flow(tenant)
             errors["base"] = "tenant_invalid"
 
-        tenant_options = {t["id"]: f"{t['name']} ({t['id']})" for t in self._available_tenants}
+        def _label(tenant: dict[str, Any]) -> str:
+            region = tenant.get("region") or "?"
+            return f"{tenant['name']} [{region}] ({tenant['id']})"
+
+        tenant_options = {t["id"]: _label(t) for t in self._available_tenants}
 
         return self.async_show_form(
             step_id="select_tenant",
@@ -306,13 +307,12 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="auth_state_missing")
 
         try:
-            user = await self._api_client.get_my_user()
             accounts = await self._api_client.list_my_accounts()
         except Exception as err:  # noqa: BLE001
-            _LOGGER.exception("Failed to fetch user/accounts after auth: %s", err)
+            _LOGGER.exception("Failed to fetch accounts after auth: %s", err)
             return self.async_abort(reason="user_fetch_failed")
 
-        self._user_display_name = user.get("fullName") or user.get("email") or ""
+        self._user_display_name = None
         self._available_tenants = []
 
         for acc in accounts:
@@ -328,7 +328,8 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 continue
 
             name = acc.get("name") or acc.get("displayName") or tenant_id
-            self._available_tenants.append({"id": tenant_id, "name": name})
+            region = acc.get("region") or acc.get("dataCenter") or acc.get("datacenter") or acc.get("location") or DEFAULT_REGION
+            self._available_tenants.append({"id": tenant_id, "name": name, "region": region})
 
         self._available_tenants.sort(key=lambda t: (t["name"] or "").lower())
 
@@ -350,7 +351,20 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="auth_state_missing")
 
         self._tenant_id = tenant["id"]
+        self._region = tenant.get("region") or DEFAULT_REGION
         self._api_client.tenant_id = self._tenant_id
+        if self._region:
+            self._api_client.base_url = API_BASE_URL.format(region=self._region)
+
+        # Fetch user profile in tenant context to set display name
+        try:
+            user = await self._api_client.get_my_user()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.exception("Failed to fetch user profile in tenant %s: %s", self._tenant_id, err)
+            return self.async_abort(reason="user_fetch_failed")
+
+        self._user_display_name = user.get("email") or user.get("fullName") or ""
+        self._name = self._user_display_name or self._name or "Trados"
 
         await self.async_set_unique_id(f"{self._tenant_id}_{self._name}")
         self._abort_if_unique_id_configured()

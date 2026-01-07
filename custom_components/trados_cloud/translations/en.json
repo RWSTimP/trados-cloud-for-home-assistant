@@ -3,21 +3,15 @@
     "step": {
       "user": {
         "title": "Trados Cloud",
-        "description": "Enter your Trados Cloud API credentials.",
+        "description": "Enter your Trados Cloud Client credentials (skip if already saved).",
         "data": {
-          "name": "Username",
           "client_id": "Client ID",
           "client_secret": "Client Secret",
-          "tenant_id": "Tenant ID (optional)",
-          "region": "Region",
           "scan_interval": "Update Interval (minutes)"
         },
         "data_description": {
-          "name": "A simple label so you can identify whose inbox this instance represents (allows multiple per tenant)",
           "client_id": "The Client ID from your Trados Enterprise application",
           "client_secret": "The Client Secret from your Trados Enterprise application",
-          "tenant_id": "Optional: if left blank, you'll pick a tenant after signing in (looks like: 2ef3c10e74fc39104e633c11)",
-          "region": "API region (eu, us, etc.)",
           "scan_interval": "How often to check for updates (default: 15 minutes)"
         }
       },
@@ -27,7 +21,7 @@
       },
       "select_tenant": {
         "title": "Choose Tenant",
-        "description": "Signed in as {user}. Select which tenant/account to use for this instance.",
+        "description": "Signed in. Select which tenant/account to use for this instance. Regions are taken from the tenant list.",
         "data": {
           "tenant_id": "Tenant"
         }
