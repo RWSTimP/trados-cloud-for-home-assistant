@@ -39,6 +39,32 @@ class TradosDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Process and organize the task data
             processed_data = self._process_tasks(tasks)
+            
+            # Detect new tasks and fire events
+            if self.data:  # Only if we have previous data to compare
+                old_task_ids = {t["id"] for t in self.data.get("tasks", [])}
+                new_task_ids = {t["id"] for t in processed_data["tasks"]}
+                newly_arrived = new_task_ids - old_task_ids
+                
+                if newly_arrived:
+                    _LOGGER.info("Detected %d new task(s) for tenant %s", len(newly_arrived), self.tenant_name)
+                    
+                    for task_id in newly_arrived:
+                        task = next(t for t in processed_data["tasks"] if t["id"] == task_id)
+                        self.hass.bus.fire(
+                            f"{DOMAIN}_new_task",
+                            {
+                                "task_id": task_id,
+                                "task_name": task.get("name"),
+                                "tenant_id": self.client.tenant_id,
+                                "tenant_name": self.tenant_name,
+                                "status": task.get("status"),
+                                "due_by": task.get("due_by"),
+                                "project_name": task.get("project_name"),
+                                "task_type": task.get("task_type"),
+                                "word_count": task.get("word_count", 0),
+                            }
+                        )
 
             _LOGGER.debug("Coordinator updated with %s tasks", len(tasks))
             return processed_data
