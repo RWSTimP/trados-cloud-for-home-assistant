@@ -1,8 +1,8 @@
 # Home Assistant Development Instructions
 
-## Project: Trados Enterprise Integration
+## Project: Trados Cloud Integration
 
-This is a Home Assistant custom integration for monitoring Trados Enterprise translation tasks. The integration polls the Trados API to retrieve assigned tasks and displays them as sensors in Home Assistant.
+This is a Home Assistant custom integration for monitoring Trados Cloud translation tasks. The integration polls the Trados API to retrieve assigned tasks and displays them as sensors in Home Assistant.
 
 ### Key Components
 
