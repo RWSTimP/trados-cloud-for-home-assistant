@@ -3,7 +3,6 @@
   "name": "Trados Cloud",
   "codeowners": [ "@rwstimp" ],
   "config_flow": true,
-  "configuration_url": "https://cloud.trados.com",
   "dependencies": [
     "http"
   ],
