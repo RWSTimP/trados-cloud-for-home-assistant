@@ -8,8 +8,8 @@
   ],
   "documentation": "https://github.com/RWSTimP/trados-cloud-for-home-assistant/blob/main/README.md",
   "integration_type": "service",
-  "issue_tracker": "https://github.com/RWSTimP/trados-cloud-for-home-assistant/issues",
   "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/RWSTimP/trados-cloud-for-home-assistant/issues",
   "requirements": [],
   "version": "0.2.0"
 }
