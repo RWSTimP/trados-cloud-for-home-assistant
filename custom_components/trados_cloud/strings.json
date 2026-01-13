@@ -10,8 +10,8 @@
           "scan_interval": "Update Interval (minutes)"
         },
         "data_description": {
-          "client_id": "The Client ID from your Trados Enterprise application",
-          "client_secret": "The Client Secret from your Trados Enterprise application",
+          "client_id": "The Client ID from your Trados Cloud application",
+          "client_secret": "The Client Secret from your Trados Cloud application",
           "scan_interval": "How often to check for updates (default: 15 minutes)"
         }
       },
@@ -32,7 +32,7 @@
     },
     "error": {
       "auth_failed": "Authentication failed. Please check your credentials.",
-      "connection_failed": "Unable to connect to Trados Enterprise API.",
+      "connection_failed": "Unable to connect to Trados Cloud API.",
       "invalid_region": "Invalid region specified.",
       "tenant_invalid": "Please choose a tenant from the list.",
       "unknown": "An unexpected error occurred."
@@ -69,7 +69,7 @@
         }
       },
       "set_options": {
-        "title": "Trados Enterprise Options",
+        "title": "Trados Cloud Options",
         "data": {
           "scan_interval": "Update Interval (minutes)"
         }
