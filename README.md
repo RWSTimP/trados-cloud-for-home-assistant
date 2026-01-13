@@ -1,65 +1,113 @@
 # Trados Cloud Integration for Home Assistant
 
-Monitor your Trados Cloud translation tasks directly in Home Assistant.
+[![HACS](https://img.shields.io/badge/HACS-Default-orange.svg)](https://hacs.xyz)
+[![License](https://img.shields.io/github/license/RWSTimP/trados-cloud-for-home-assistant)](LICENSE)
 
-## Features
+Keep track of your Trados Cloud translation assignments directly from your Home Assistant dashboard. This integration brings your translation workflow into your smart home, helping you stay on top of deadlines and manage your workload efficiently.
 
-### Phase 1 (Current)
-- ✅ **Total Tasks** - Count of all assigned tasks
-- ✅ **Tasks by Status** - Separate sensors for Created, In Progress, and Completed tasks
-- ✅ **Overdue Tasks** - Count and details of overdue tasks
-- ✅ **Total Words** - Total word count across all your tasks
-- ✅ **Configurable Polling** - Set update frequency (5-120 minutes, default: 15)
-- ✅ **Multi-user Support** - Each config entry supports a different user/service account
+## Overview
 
-### Phase 2 (Planned)
+This integration connects Home Assistant to the [Trados Cloud](https://www.rws.com/translation/trados/trados-cloud/) platform, providing real-time visibility into your translation task queue. It's designed for:
+
+- **Freelance translators** managing assignments across multiple projects
+- **Translation project managers** monitoring team workload
+- **Language service providers** tracking operational metrics
+- **Anyone using Trados Cloud** who wants task visibility in their home automation setup
+
+### What You Get
+
+Monitor your translation workload with dedicated sensors that track:
+
+- **Total Tasks** - Count of all assigned tasks across all projects
+- **Tasks by Status** - Separate sensors for Created, In Progress, and Completed tasks
+- **Overdue Tasks** - Immediate visibility into tasks past their due date
+- **Total Words** - Total word count across all your active assignments
+- **Next Due Date** - Track your most urgent deadline
+- **Configurable Polling** - Set update frequency from 5 to 120 minutes (default: 15)
+- **Multi-account Support** - Monitor multiple Trados Cloud accounts/tenants
+
+### Automation Ideas
+
+Integrate your translation workflow with Home Assistant automations:
+
+- Get mobile notifications when tasks become overdue
+- Display your daily task count on smart displays
+- Set up morning briefings with your translation workload
+- Create visual indicators (smart lights) for urgent deadlines
+- Track productivity metrics over time with long-term statistics
+
+### Planned Features
+
 - 🔄 Webhook support for real-time updates
-- 🔄 Per-project task tracking
-- 🔄 Due date notifications/alerts
-- 🔄 Task assignment automation
+- 🔄 Per-project task breakdown
+- 🔄 Proactive due date notifications
+- 🔄 Task acceptance automation
 
 ## Installation
 
 ### Prerequisites
 
-You need the following from your Trados Cloud account:
-1. **Client ID** - From your Trados application
-2. **Client Secret** - From your Trados application  
-3. **Tenant ID** - Your Trados Account ID (format: `2ef3c10e74fc39104e633c11`)
-4. **Region** - Your API region (`eu`, `us`, etc.)
+Before you begin, you'll need:
 
-### Getting Credentials
+#### ⚠️ You will Need RWS Support to enable OAuth 2.0 Device-Code Authentication for your Application ⚠️
+- The OAuth 2.0 application created by Trados does not have the required authentication flows enabled. You'll need to raise a ticket with support to arrange for the application to enabled for Device-Code authentication. We hope to remove this step in the future.
 
-1. Log in to Trados Cloud
-2. Go to **Manage Account** → **Integrations** → **Applications**
-3. Create a new application or use an existing one
-4. Note the **Client ID** and **Client Secret**
-5. Find your **Tenant ID** in Account Information (Trados Account ID)
+- **Home Assistant** 2025.12 or newer
+- **Trados Cloud account** with API access
+- **Administrator access** to create an application in Trados Cloud
+
+
+### Getting API Credentials
+
+This integration uses OAuth 2.0 authentication to obtain access to Trados Cloud. You'll need a **Client ID** and **Client Secret** from Trados Cloud.
+
+> **Note:** If you're not the account administrator, ask your Trados Cloud administrator to create these credentials for you.
+
+#### Step 1: Create a Trados Application
+
+1. Log in to [Trados Cloud](https://cloud.trados.com) as an administrator
+2. Expand the account menu on the top right-hand corner and select Integrations.
+3. Select the Applications sub-tab.
+4. Select New Application and enter the following information:
+  - **Name** – Enter a unique name for your custom application.
+  - (Optional) **URL** – Enter your custom application URL.
+  - (Optional) **Description** – Enter any other relevant details.
+  - **Service User** – Select a service user from the dropdown menu.
+5. Select Add.
+6. Back in the Applications sub-tab, select the check box corresponding to your application.
+7. Select Edit.
+8. On the Overall Information page you can change any of the following, if necessary: name, URL, description.
+
+📖 **Detailed instructions:** [Trados Cloud Service Credentials Guide](https://eu.cloud.trados.com/lc/api-docs/service-credentials)
 
 ### Setup in Home Assistant
 
 #### Option 1: HACS (Recommended - when published)
 1. Open HACS
 2. Go to Integrations
-3. Search for "Trados Enterprise"
+3. Search for "Trados Cloud"
 4. Click Install
 
 #### Option 2: Manual Installation
-1. Copy the `custom_components/trados_cloud` folder to your HA `custom_components` directory
-2. Restart Home Assistant
+1. Download the latest release from GitHub
+2. Extract the `custom_components/trados_cloud` folder
+3. Copy it to your Home Assistant `config/custom_components/` directory
+4. Restart Home Assistant
 
 ### Configuration
 
-1. Go to **Settings** → **Devices & Services**
-2. Click **Add Integration**
-3. Search for "Trados Enterprise"
-4. Enter your credentials:
-   - Client ID
-   - Client Secret
-   - Tenant ID
-   - Region (default: `eu`)
-   - Update Interval in minutes (default: 15)
-5. Click Submit
+1. In Home Assistant, go to **Settings** → **Devices & Services**
+2. Click **Add Integration** (+ button in bottom right)
+3. Search for "Trados Cloud"
+4. Enter your **Client ID** and **Client Secret** (from Step 3 above)
+5. Click the authorization link to sign in to Trados Cloud
+6. Authorize the application in your browser
+7. Return to Home Assistant and click **Submit**
+8. Select which **tenant/account** to monitor (if you have multiple)
+9. (Optional) Configure the update interval (default: 15 minutes)
+
+The integration will create a device for each tenant with all sensors automatically configured.
+
 
 ## Sensors
 
@@ -134,31 +182,69 @@ automation:
 
 ### Running Locally
 
-1. Clone this repository
-2. Set up Python virtual environment:
+The recommended way to test this integration locally is using Docker:
+
+#### Prerequisites
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed
+- Git to clone the repository
+
+#### Quick Start
+
+1. Clone this repository:
    ```bash
-   python -m venv venv
-   .\venv\Scripts\Activate.ps1  # Windows
-   source venv/bin/activate     # Linux/Mac
-   ```
-3. Install Home Assistant:
-   ```bash
-   pip install homeassistant
-   ```
-4. Copy integration to custom_components:
-   ```bash
-   mkdir config\custom_components
-   cp -r custom_components\trados_cloud config\custom_components\
-   ```
-5. Run Home Assistant:
-   ```bash
-   hass --config config/ --verbose
+   git clone https://github.com/RWSTimP/trados-cloud-for-home-assistant.git
+   cd trados-cloud-for-home-assistant
    ```
 
+2. Run the Docker startup script:
+   ```powershell
+   .\start_docker_ha.ps1
+   ```
+
+This script will:
+- Check if Docker is running (and start it if needed)
+- Create or start a Home Assistant container
+- Mount the `config/` directory with the integration pre-installed
+- Expose Home Assistant on http://localhost:8123
+
+3. Wait for Home Assistant to start (2-3 minutes on first run)
+4. Open http://localhost:8123 in your browser
+5. Complete the onboarding wizard
+6. Add the Trados Cloud integration via **Settings** → **Devices & Services**
+
+#### Useful Commands
+
+```powershell
+# View live logs
+docker logs -f homeassistant
+
+# Restart after making code changes
+docker restart homeassistant
+
+# Stop the container
+docker stop homeassistant
+
+# Remove the container (keeps config data)
+docker rm -f homeassistant
+```
+
+#### Updating Integration Code
+
+After making changes to the integration:
+
+1. Copy updated files to the container:
+   ```powershell
+   Copy-Item -Path "custom_components\trados_cloud" -Destination "config\custom_components\trados_cloud" -Recurse -Force
+   ```
+
+2. Restart Home Assistant:
+   ```powershell
+   docker restart homeassistant
+   ```
 ### Project Structure
 
 ```
-custom_components/trados_enterprise/
+custom_components/trados_cloud/
 ├── __init__.py          # Integration setup
 ├── manifest.json        # Integration metadata
 ├── const.py             # Constants and configuration
@@ -166,33 +252,54 @@ custom_components/trados_enterprise/
 ├── api.py               # Trados API client
 ├── coordinator.py       # Data update coordinator
 ├── sensor.py            # Sensor platform
-└── strings.json         # UI translations
+├── strings.json         # UI translations
+└── translations/
+    └── en.json          # English configuration flow
 ```
 
 ## Troubleshooting
 
-### Authentication Errors
+**Problem:** "Authentication failed" during setup
 
-- Verify your Client ID and Client Secret are correct
-- Ensure the service user has access to the account
-- Check that the Tenant ID matches your account
+**Solutions:**
+- Verify your Client ID and Client Secret are exactly as shown in Trados Cloud
 
-### No Data Showing
+### No Tasks Showing
 
-- Check the Home Assistant logs for errors
-- Verify the region is correct (`eu`, `us`, etc.)
-- Ensure the API credentials have proper permissions
+**Problem:** Sensors show zero tasks, but you have assignments
 
-### Slow Updates
+**Solutions:**
+- Review Home Assistant logs (`Settings` → `System` → `Logs`) for API errors
+- Ensure tasks are actually assigned to the service user or visible to its groups
 
-- Increase the update interval in integration options
-- Check API rate limits in Trados documentation
-- Monitor Home Assistant logs for rate limit errors
+### Authorization Timeout
 
-## API Rate Limits
+**Problem:** "Authorization timed out" error
 
-Trados Cloud has the following limits:
-- Maximum 16 token requests per day
+**Solutions:**
+- Make sure you complete the authorization in the browser within 5 minutes
+- Check your browser isn't blocking pop-ups from Trados Cloud
+- Try the setup process again with a fresh start
+
+### Slow Updates or Rate Limits
+
+**Problem:** Data updates slowly or you see rate limit errors
+
+**Solutions:**
+- Increase the update interval in integration options (recommended: 15-30 minutes)
+- Trados Cloud has API rate limits - see [API Rate Limits documentation](https://eu.cloud.trados.com/lc/api-docs/api-rate-limits)
+- This integration caches authentication tokens for 24 hours to minimize API calls
+- If you have multiple integrations using the same credentials, they share token limits
+
+### Integration Won't Load
+
+**Problem:** Integration doesn't appear or fails to load
+
+**Solutions:**
+- Ensure you're running Home Assistant 2025.12 or newer
+- Check Home Assistant logs for specific error messages
+- Verify the integration files are in the correct location: `config/custom_components/trados_cloud/`
+- Restart Home Assistant after installation
 - Tokens are cached for 24 hours
 - This integration respects these limits
 
@@ -200,7 +307,7 @@ Trados Cloud has the following limits:
 
 - **Issues**: [GitHub Issues](https://github.com/RWSTimP/trados-cloud-for-home-assistant/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/RWSTimP/trados-cloud-for-home-assistant/discussions)
-- **Documentation**: [Trados API Docs](https://eu.cloud.trados.com/lc/api-docs/)
+- **Trados API Documentation**: [Trados API Docs](https://eu.cloud.trados.com/lc/api-docs/)
 
 ## License
 
