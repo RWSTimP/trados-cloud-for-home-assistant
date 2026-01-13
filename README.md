@@ -82,11 +82,13 @@ This integration uses OAuth 2.0 authentication to obtain access to Trados Cloud.
 
 ### Setup in Home Assistant
 
-#### Option 1: HACS (Recommended - when published)
+#### Option 1: HACS
 1. Open HACS
 2. Go to Integrations
 3. Search for "Trados Cloud"
 4. Click Install
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=RWSTimP&repository=trados_cloud&category=Integration)
 
 #### Option 2: Manual Installation
 1. Download the latest release from GitHub
