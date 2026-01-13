@@ -198,8 +198,8 @@ Trados Cloud has the following limits:
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/trados-enterprise-ha/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/trados-enterprise-ha/discussions)
+- **Issues**: [GitHub Issues](https://github.com/RWSTimP/trados-cloud-for-home-assistant/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/RWSTimP/trados-cloud-for-home-assistant/discussions)
 - **Documentation**: [Trados API Docs](https://eu.cloud.trados.com/lc/api-docs/)
 
 ## License
@@ -208,4 +208,4 @@ MIT License - See LICENSE file for details
 
 ## Credits
 
-Built for the Home Assistant community by [Your Name]
+Built for the Home Assistant community

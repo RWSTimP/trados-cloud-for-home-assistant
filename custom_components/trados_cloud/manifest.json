@@ -1,12 +1,15 @@
 {
   "domain": "trados_cloud",
   "name": "Trados Cloud",
-  "codeowners": ["@yourusername"],
+  "codeowners": [ "@rwstimp" ],
   "config_flow": true,
   "configuration_url": "https://cloud.trados.com",
-  "dependencies": [],
-  "documentation": "https://github.com/yourusername/trados-enterprise-ha",
+  "dependencies": [
+    "http"
+  ],
+  "documentation": "https://github.com/RWSTimP/trados-cloud-for-home-assistant/blob/main/README.md",
   "integration_type": "service",
+  "issue_tracker": "https://github.com/RWSTimP/trados-cloud-for-home-assistant/issues",
   "iot_class": "cloud_polling",
   "requirements": [],
   "version": "0.1.0"

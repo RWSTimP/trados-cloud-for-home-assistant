@@ -24,6 +24,7 @@ config/**
 *.swp
 *.swo
 *~
+.vs
 
 # OS
 .DS_Store
@@ -37,3 +38,4 @@ desktop.ini
 *.tmp
 *.bak
 *.backup
+HACS_SUBMISSION.md
