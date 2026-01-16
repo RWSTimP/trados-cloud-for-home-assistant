@@ -25,10 +25,19 @@
         "data": {
           "tenant_id": "Tenant"
         }
+      },
+      "reauth": {
+        "title": "Reauthenticate with Trados",
+        "description": "The authentication for **{account}** has expired. Click Submit to start the reauthentication process."
+      },
+      "reauth_authorize": {
+        "title": "Reauthenticate with Trados",
+        "description": "The authentication for **{account}** has expired. Click Submit to start the reauthentication process."
       }
     },
     "progress": {
-      "authorize_device": "**Open this link in your browser to authorize:**\n\n{verification_uri}\n\nWaiting for authorization..."
+      "authorize_device": "**Open this link in your browser to authorize:**\n\n{verification_uri}\n\nWaiting for authorization...",
+      "reauth_progress": "**Open this link in your browser to authorize:**\n\n{verification_uri}\n\nWaiting for authorization..."
     },
     "error": {
       "auth_failed": "Authentication failed. Please check your credentials.",
@@ -47,7 +56,9 @@
       "no_tenants": "No tenants were found for this user.",
       "add_device_started": "Started a new device setup. Complete the new flow to add another tenant.",
       "unknown_option": "Unknown menu option. Please try again.",
-      "cannot_remove_last_device": "Cannot remove the last tenant. At least one tenant must remain."
+      "cannot_remove_last_device": "Cannot remove the last tenant. At least one tenant must remain.",
+      "reauth_explicit_required": "Reauthentication must be explicitly initiated by the user. Please click the repair notification to start the reauth process.",
+      "reauth_waiting_user": "Waiting for user to start reauthentication. Please click the repair notification."
     }
   },
   "options": {

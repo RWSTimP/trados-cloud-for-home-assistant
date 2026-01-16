@@ -32,19 +32,35 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Cache the defaults at module load time (before event loop starts)
+_CACHED_DEFAULTS: dict[str, Any] | None = None
+
 
 def _load_defaults() -> dict[str, Any]:
-    """Load default credentials from .credentials.json if it exists."""
+    """Load default credentials from .credentials.json if it exists.
+    
+    This is cached at module level to avoid blocking I/O during async operations.
+    """
+    global _CACHED_DEFAULTS
+    if _CACHED_DEFAULTS is not None:
+        return _CACHED_DEFAULTS
+    
     defaults_file = Path(__file__).parent / ".credentials.json"
     if defaults_file.exists():
         try:
             with open(defaults_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 _LOGGER.debug("Loaded default credentials from %s", defaults_file)
+                _CACHED_DEFAULTS = data
                 return data
         except (json.JSONDecodeError, OSError) as err:
             _LOGGER.warning("Failed to load defaults from %s: %s", defaults_file, err)
+    _CACHED_DEFAULTS = {}
     return {}
+
+
+# Pre-load defaults at module import time (before event loop)
+_CACHED_DEFAULTS = _load_defaults() if Path(__file__).parent.joinpath(".credentials.json").exists() else {}
 
 
 class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -67,9 +83,13 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._interval: int = 5
         self._api_client: TradosAPIClient | None = None
         self._poll_result: dict[str, Any] | None = None
-        self._defaults: dict[str, Any] = _load_defaults()
+        self._defaults: dict[str, Any] = _CACHED_DEFAULTS
         self._user_display_name: str | None = None
         self._available_tenants: list[dict[str, Any]] = []
+        self._reauth_task_done: bool = False
+        self._reauth_task_success: bool = False
+        self._polling_task: asyncio.Task | None = None  # Track the single polling task
+        self.config_entry: config_entries.ConfigEntry | None = None
 
         self._global_store: Store | None = None
         self._global_data: dict[str, Any] | None = None
@@ -254,6 +274,216 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_timeout(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Handle timeout."""
         return self.async_abort(reason="timeout")
+    async def async_step_reauth(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Handle reauthentication when tokens expire.
+        
+        This step is called when ConfigEntryAuthFailed is raised during setup.
+        It creates a repair notification and waits for the user to initiate the fix.
+        The device flow MUST NOT start until the user explicitly clicks the repair.
+        """
+        self.config_entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        
+        # Load existing credentials
+        self._client_id = self.config_entry.data.get(CONF_CLIENT_ID)
+        self._client_secret = self.config_entry.data.get(CONF_CLIENT_SECRET)
+        self._scan_interval = self.config_entry.data.get(
+            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL.total_seconds() / 60
+        )
+        
+        # Reset any previous device flow state to ensure we start fresh
+        self._device_code = None
+        self._user_code = None
+        self._verification_uri = None
+        self._verification_uri_complete = None
+        self._interval = 5
+        self._reauth_task_done = False
+        self._reauth_task_success = False
+        self._poll_result = None
+        self._polling_task = None  # Reset polling task for fresh start
+        
+        # When HA auto-initializes reauth during startup, it passes the full config entry data
+        # which includes CONF_ACCESS_TOKEN, 'tenants', 'user_display_name', etc.
+        # When a user clicks Submit on the reauth form, user_input will be {} (empty dict)
+        # We ONLY show the form when it's auto-init (contains CONF_ACCESS_TOKEN)
+        # We proceed to device flow when user clicks Submit (user_input is None or empty dict)
+        if user_input is not None and CONF_ACCESS_TOKEN in user_input:
+            # This is auto-initialization from HA startup - show the repair form
+            _LOGGER.info(
+                "Reauth required for %s - waiting for user to click repair",
+                self.config_entry.title
+            )
+            return self.async_show_form(
+                step_id="reauth",
+                description_placeholders={
+                    "account": self.config_entry.title,
+                },
+            )
+        
+        # User clicked submit on the repair form (user_input is None or {})- now start the device flow
+        _LOGGER.info("User initiated reauth for %s", self.config_entry.title)
+        return await self.async_step_reauth_authorize(user_input={})
+
+    async def async_step_reauth_authorize(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show authorization URL for reauthentication.
+        
+        This step is called from async_step_reauth after the user clicks Submit.
+        The auto-init vs user-click distinction is already handled in async_step_reauth.
+        """
+        if not self._api_client:
+            session = async_get_clientsession(self.hass)
+            self._api_client = TradosAPIClient(
+                session=session,
+                client_id=self._client_id,
+                client_secret=self._client_secret,
+                tenant_id="",
+                region=DEFAULT_REGION,
+            )
+
+        # Only start a new device flow if we don't already have one in progress
+        # This prevents creating multiple flows when HA calls this step repeatedly
+        if not self._device_code:
+            try:
+                device_data = await self._api_client.start_device_flow()
+                self._device_code = device_data["device_code"]
+                self._user_code = device_data["user_code"]
+                self._verification_uri = device_data["verification_uri"]
+                self._verification_uri_complete = device_data.get("verification_uri_complete")
+                self._interval = max(device_data["interval"], 5)  # Auth0 specifies interval, min 5 seconds
+                self._reauth_task_done = False
+                self._reauth_task_success = False
+                
+                _LOGGER.info(
+                    "Reauth device flow started - user code: %s, polling interval: %s seconds",
+                    self._user_code,
+                    self._interval,
+                )
+            except TradosAuthError as err:
+                _LOGGER.error("Failed to start reauth device flow: %s", err)
+                return self.async_abort(reason="auth_failed")
+
+        auth_url = self._verification_uri_complete or self._verification_uri
+
+        # Check if task is done - if so, show progress_done, not a new task
+        if self._reauth_task_done:
+            if self._reauth_task_success:
+                return self.async_show_progress_done(next_step_id="reauth_confirm")
+            else:
+                return self.async_show_progress_done(next_step_id="reauth_failed")
+
+        # Only create a polling task if one isn't already running
+        # Store in instance variable to prevent creating multiple parallel tasks
+        if not hasattr(self, '_polling_task') or self._polling_task is None or self._polling_task.done():
+            _LOGGER.debug("Creating new polling task")
+            self._polling_task = asyncio.create_task(self.async_poll_for_reauth_token())
+        else:
+            _LOGGER.debug("Reusing existing polling task (still running)")
+
+        return self.async_show_progress(
+            step_id="reauth_authorize",
+            progress_action="reauth_progress",
+            description_placeholders={
+                "verification_uri": auth_url,
+            },
+            progress_task=self._polling_task,
+        )
+
+    async def async_step_reauth_progress(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Check progress of reauth task."""
+        if not self._reauth_task_done:
+            return self.async_show_progress(
+                step_id="reauth_authorize",
+                progress_action="reauth_progress",
+            )
+        
+        if self._reauth_task_success:
+            return self.async_show_progress_done(next_step_id="reauth_confirm")
+        
+        return self.async_show_progress_done(next_step_id="reauth_failed")
+
+    async def async_poll_for_reauth_token(self) -> None:
+        """Poll for reauth token - runs as background task."""
+        max_attempts = 60
+        _LOGGER.debug("Starting reauth polling with interval=%s seconds", self._interval)
+        
+        for attempt in range(max_attempts):
+            try:
+                _LOGGER.debug("Reauth poll attempt %s/%s", attempt + 1, max_attempts)
+                result = await self._api_client.poll_device_token(self._device_code)
+                
+                if result["status"] == "authorized":
+                    _LOGGER.info("Reauth successful after %s attempts", attempt + 1)
+                    
+                    # Store the result for the completion step
+                    self._poll_result = result
+                    self._reauth_task_done = True
+                    self._reauth_task_success = True
+                    return
+                    
+                elif result["status"] == "pending":
+                    await asyncio.sleep(self._interval)
+                    continue
+                    
+                elif result["status"] == "slow_down":
+                    self._interval += 5
+                    _LOGGER.warning(
+                        "Auth0 requested slow_down - increasing poll interval to %s seconds",
+                        self._interval,
+                    )
+                    await asyncio.sleep(self._interval)
+                    continue
+                    
+                else:
+                    # Code expired, denied, or invalid
+                    _LOGGER.warning("Device code status: %s - ending reauth flow", result.get("status"))
+                    self._reauth_task_done = True
+                    self._reauth_task_success = False
+                    return
+                    
+            except TradosAuthError as err:
+                _LOGGER.error("Reauth polling error: %s", err)
+                self._reauth_task_done = True
+                self._reauth_task_success = False
+                return
+        
+        # Polling timed out after max attempts
+        _LOGGER.error("Reauth polling timed out after %s attempts", max_attempts)
+        self._reauth_task_done = True
+        self._reauth_task_success = False
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Confirm reauth and update tokens."""
+        if not self._poll_result:
+            return self.async_abort(reason="reauth_failed")
+        
+        # Update config entry with new tokens
+        new_data = dict(self.config_entry.data)
+        new_data[CONF_ACCESS_TOKEN] = self._poll_result["access_token"]
+        new_data[CONF_REFRESH_TOKEN] = self._poll_result["refresh_token"]
+        new_data[CONF_TOKEN_EXPIRES] = self._poll_result["token_expires"]
+        
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            data=new_data,
+        )
+        
+        _LOGGER.info("Reauth completed, reloading integration")
+        await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+        
+        # Use abort with success reason to close the flow
+        return self.async_abort(reason="reauth_successful")
+
+    async def async_step_reauth_failed(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle failed reauth attempt."""
+        _LOGGER.error("Reauth failed, user needs to try again")
+        return self.async_abort(reason="reauth_failed")
 
     async def async_step_finish(
         self, user_input: dict[str, Any] | None = None
@@ -407,7 +637,7 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self._config_entry = config_entry
+        # Note: OptionsFlow provides self.config_entry automatically
         self._api_client: TradosAPIClient | None = None
         self._available_tenants: list[dict[str, Any]] = []
         self._client_id: str | None = None
@@ -444,13 +674,13 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
         """Fetch tenants and let user select one to add as a new device."""
         # Initialize API client with stored credentials from the existing entry
         if self._api_client is None:
-            self._client_id = self._config_entry.data.get(CONF_CLIENT_ID)
-            self._client_secret = self._config_entry.data.get(CONF_CLIENT_SECRET)
-            access_token = self._config_entry.data.get(CONF_ACCESS_TOKEN)
-            refresh_token = self._config_entry.data.get(CONF_REFRESH_TOKEN)
-            token_expires_str = self._config_entry.data.get(CONF_TOKEN_EXPIRES)
-            existing_tenant_id = self._config_entry.data.get(CONF_TENANT_ID)
-            existing_region = self._config_entry.data.get(CONF_REGION, DEFAULT_REGION)
+            self._client_id = self.config_entry.data.get(CONF_CLIENT_ID)
+            self._client_secret = self.config_entry.data.get(CONF_CLIENT_SECRET)
+            access_token = self.config_entry.data.get(CONF_ACCESS_TOKEN)
+            refresh_token = self.config_entry.data.get(CONF_REFRESH_TOKEN)
+            token_expires_str = self.config_entry.data.get(CONF_TOKEN_EXPIRES)
+            existing_tenant_id = self.config_entry.data.get(CONF_TENANT_ID)
+            existing_region = self.config_entry.data.get(CONF_REGION, DEFAULT_REGION)
             
             if not self._client_id or not self._client_secret:
                 return self.async_abort(reason="missing_credentials")
@@ -532,7 +762,7 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
         tenant_name = tenant.get("name") or self._tenant_id
         
         # Get existing tenants list from the config entry
-        existing_tenants = list(self._config_entry.data.get("tenants", []))
+        existing_tenants = list(self.config_entry.data.get("tenants", []))
         
         # Check if this tenant is already configured
         for existing_tenant in existing_tenants:
@@ -552,10 +782,10 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
         _LOGGER.info("Updating config entry with %d tenants: %s", len(updated_tenants), [t["name"] for t in updated_tenants])
         
         # Update the config entry with the new tenant list
-        new_data = {**self._config_entry.data, "tenants": updated_tenants}
+        new_data = {**self.config_entry.data, "tenants": updated_tenants}
         
         self.hass.config_entries.async_update_entry(
-            self._config_entry,
+            self.config_entry,
             data=new_data,
         )
         
@@ -569,7 +799,7 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Remove a tenant device from the integration."""
         # Get existing tenants list from the config entry
-        existing_tenants = list(self._config_entry.data.get("tenants", []))
+        existing_tenants = list(self.config_entry.data.get("tenants", []))
         
         # Check if there's only one tenant - can't delete the last one
         if len(existing_tenants) <= 1:
@@ -590,7 +820,7 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
                 
                 # Remove the device from the device registry
                 device_reg = dr.async_get(self.hass)
-                device_identifier = f"{self._config_entry.entry_id}_{tenant_id}"
+                device_identifier = f"{self.config_entry.entry_id}_{tenant_id}"
                 device = device_reg.async_get_device(
                     identifiers={(DOMAIN, device_identifier)}
                 )
@@ -601,10 +831,10 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
                     _LOGGER.warning("Device for tenant %s not found in registry (identifier: %s)", tenant_id, device_identifier)
                 
                 # Update the config entry with the new tenant list
-                new_data = {**self._config_entry.data, "tenants": updated_tenants}
+                new_data = {**self.config_entry.data, "tenants": updated_tenants}
                 
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry,
+                    self.config_entry,
                     data=new_data,
                 )
                 
@@ -638,7 +868,7 @@ class TradosOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current_interval = self._config_entry.data.get(
+        current_interval = self.config_entry.data.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL.total_seconds() / 60
         )
 

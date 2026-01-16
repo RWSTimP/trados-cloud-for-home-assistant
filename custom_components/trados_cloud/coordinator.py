@@ -4,9 +4,10 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import TradosAPIClient, TradosAPIError
+from .api import TradosAPIClient, TradosAPIError, TradosAuthError
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,6 +70,17 @@ class TradosDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("Coordinator updated with %s tasks", len(tasks))
             return processed_data
 
+        except TradosAuthError as err:
+            # Authentication errors - mark coordinator as failed but don't trigger reauth
+            # Reauth will only be triggered if ALL tenants fail (handled in __init__.py)
+            _LOGGER.error(
+                "Authentication failed for tenant %s: %s",
+                self.tenant_name,
+                err,
+            )
+            raise UpdateFailed(
+                f"Authentication failed for {self.tenant_name}: {err}"
+            ) from err
         except TradosAPIError as err:
             raise UpdateFailed(f"Error communicating with Trados API: {err}") from err
 

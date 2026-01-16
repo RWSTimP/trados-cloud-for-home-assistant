@@ -64,19 +64,21 @@ class TradosAPIClient:
             if datetime.now() < self._token_expires - timedelta(minutes=5):
                 _LOGGER.debug("Using cached access token")
                 return self._token
-            
-            # Try to refresh if we have a refresh token
-            if self._refresh_token:
-                _LOGGER.debug("Token expiring soon, attempting refresh")
-                try:
-                    await self._refresh_access_token()
+        
+        # Token is missing or expired - try to refresh if we have a refresh token
+        if self._refresh_token:
+            _LOGGER.debug("Token %s, attempting refresh", "expired or expiring soon" if self._token else "missing")
+            try:
+                await self._refresh_access_token()
+                if self._token:
                     return self._token
-                except TradosAuthError:
-                    _LOGGER.warning("Token refresh failed, need re-authentication")
-                    raise TradosAuthError("Token expired and refresh failed")
+            except TradosAuthError as err:
+                _LOGGER.warning("Token refresh failed: %s", err)
+                raise TradosAuthError("Token refresh failed, re-authentication required") from err
 
+        # No valid token and no refresh token available
         if not self._token:
-            _LOGGER.error("No access token available")
+            _LOGGER.error("No access token available and no refresh token to obtain one")
             raise TradosAuthError("No access token available")
         
         return self._token

@@ -10,8 +10,8 @@
           "scan_interval": "Update Interval (minutes)"
         },
         "data_description": {
-          "client_id": "The Client ID from your Trados Cloud application",
-          "client_secret": "The Client Secret from your Trados Cloud application",
+          "client_id": "The Client ID from your Trados Enterprise application",
+          "client_secret": "The Client Secret from your Trados Enterprise application",
           "scan_interval": "How often to check for updates (default: 15 minutes)"
         }
       },
@@ -25,14 +25,23 @@
         "data": {
           "tenant_id": "Tenant"
         }
+      },
+      "reauth": {
+        "title": "Reauthenticate with Trados",
+        "description": "The authentication for **{account}** has expired. Click Submit to start the reauthentication process."
+      },
+      "reauth_authorize": {
+        "title": "Reauthenticate with Trados",
+        "description": "The authentication for **{account}** has expired. Click Submit to start the reauthentication process."
       }
     },
     "progress": {
-      "authorize_device": "**Open this link in your browser to authorize:**\n\n{verification_uri}\n\nWaiting for authorization..."
+      "authorize_device": "**Open this link in your browser to authorize:**\n\n{verification_uri}\n\nWaiting for authorization...",
+      "reauth_progress": "**Open this link in your browser to authorize:**\n\n{verification_uri}\n\nWaiting for authorization..."
     },
     "error": {
       "auth_failed": "Authentication failed. Please check your credentials.",
-      "connection_failed": "Unable to connect to Trados Cloud API.",
+      "connection_failed": "Unable to connect to Trados Enterprise API.",
       "invalid_region": "Invalid region specified.",
       "tenant_invalid": "Please choose a tenant from the list.",
       "unknown": "An unexpected error occurred."
@@ -47,7 +56,9 @@
       "no_tenants": "No tenants were found for this user.",
       "add_device_started": "Started a new device setup. Complete the new flow to add another tenant.",
       "unknown_option": "Unknown menu option. Please try again.",
-      "cannot_remove_last_device": "Cannot remove the last tenant. At least one tenant must remain."
+      "cannot_remove_last_device": "Cannot remove the last tenant. At least one tenant must remain.",
+      "reauth_explicit_required": "Reauthentication must be explicitly initiated by the user. Please click the repair notification to start the reauth process.",
+      "reauth_waiting_user": "Waiting for user to start reauthentication. Please click the repair notification."
     }
   },
   "options": {
@@ -69,7 +80,7 @@
         }
       },
       "set_options": {
-        "title": "Trados Cloud Options",
+        "title": "Trados Enterprise Options",
         "data": {
           "scan_interval": "Update Interval (minutes)"
         }
