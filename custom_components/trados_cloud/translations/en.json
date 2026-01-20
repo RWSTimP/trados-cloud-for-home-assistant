@@ -33,6 +33,10 @@
       "reauth_authorize": {
         "title": "Reauthenticate with Trados",
         "description": "The authentication for **{account}** has expired. Click Submit to start the reauthentication process."
+      },
+      "reauth_failed": {
+        "title": "Reauthentication Failed",
+        "description": "The reauthentication attempt was unsuccessful. This may happen if you cancelled the authorization or if it timed out. Click Submit to try again, or close this dialog to cancel."
       }
     },
     "progress": {
@@ -44,6 +48,7 @@
       "connection_failed": "Unable to connect to Trados Enterprise API.",
       "invalid_region": "Invalid region specified.",
       "tenant_invalid": "Please choose a tenant from the list.",
+      "reauth_failed": "Authentication failed. This may happen if you cancelled the authorization or if it timed out.",
       "unknown": "An unexpected error occurred."
     },
     "abort": {
@@ -58,7 +63,9 @@
       "unknown_option": "Unknown menu option. Please try again.",
       "cannot_remove_last_device": "Cannot remove the last tenant. At least one tenant must remain.",
       "reauth_explicit_required": "Reauthentication must be explicitly initiated by the user. Please click the repair notification to start the reauth process.",
-      "reauth_waiting_user": "Waiting for user to start reauthentication. Please click the repair notification."
+      "reauth_waiting_user": "Waiting for user to start reauthentication. Please click the repair notification.",
+      "reauth_failed": "Reauthentication failed. Please try again or reconfigure the integration.",
+      "reauth_successful": "Reauthentication completed successfully! Your Trados Cloud connection has been restored."
     }
   },
   "options": {

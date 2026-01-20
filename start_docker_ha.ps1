@@ -22,12 +22,16 @@ if ($containerExists -eq "homeassistant") {
     $containerRunning = docker ps --filter "name=homeassistant" --format "{{.Names}}" 2>$null
     
     if ($containerRunning -eq "homeassistant") {
-        Write-Host "✅ Container is already running" -ForegroundColor Green
+        Write-Host "⏸️  Stopping container to update files..." -ForegroundColor Yellow
+        docker stop homeassistant | Out-Null
     }
-    else {
-        Write-Host "🔄 Starting existing container..." -ForegroundColor Yellow
-        docker start homeassistant
-    }
+    
+    # Always update the integration files
+    Write-Host "📋 Copying Trados integration to config..." -ForegroundColor Cyan
+    Copy-Item -Path "custom_components" -Destination "config\" -Recurse -Force
+    
+    Write-Host "🔄 Starting container..." -ForegroundColor Yellow
+    docker start homeassistant | Out-Null
 }
 else {
     Write-Host "🆕 Creating new Home Assistant container..." -ForegroundColor Green
@@ -81,10 +85,16 @@ Write-Host "   Remove:       " -NoNewline -ForegroundColor White
 Write-Host "docker rm -f homeassistant" -ForegroundColor Cyan
 Write-Host ""
 
-# Offer to watch logs
-$response = Read-Host "Watch startup logs? (y/n)"
-if ($response -eq 'y') {
-    Write-Host ""
-    Write-Host "📜 Watching logs (Ctrl+C to exit)..." -ForegroundColor Cyan
-    docker logs -f homeassistant
+# Watch logs for 30 seconds
+Write-Host "📜 Watching logs for 30 seconds..." -ForegroundColor Cyan
+$job = Start-Job -ScriptBlock { docker logs -f homeassistant 2>&1 }
+$timer = [Diagnostics.Stopwatch]::StartNew()
+while ($timer.Elapsed.TotalSeconds -lt 30) {
+    $job | Receive-Job
+    Start-Sleep -Milliseconds 100
 }
+$job | Receive-Job  # Get any remaining output
+Stop-Job -Job $job
+Remove-Job -Job $job
+Write-Host ""
+Write-Host "✅ Log viewing complete. Container is still running." -ForegroundColor Green
