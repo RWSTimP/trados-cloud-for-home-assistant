@@ -147,19 +147,11 @@ class TradosDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
     def _extract_word_count(self, task: dict[str, Any]) -> int:
-        """Extract word count from task input data."""
-        # Get totalWords from input.targetFile.totalWords when input.type = "targetFile"
+        """Extract word count from task data."""
+        # Word count is now pre-calculated and added to the task by the API client
         try:
-            input_data = task.get("input", {})
-            input_type = input_data.get("type")
-            
-            if input_type == "targetFile":
-                target_file = input_data.get("targetFile", {})
-                total_words = target_file.get("totalWords", 0)
-                return int(total_words) if total_words else 0
-            
-            return 0
-
-        except (KeyError, TypeError, AttributeError, ValueError) as err:
+            total_words = task.get("total_words", 0)
+            return int(total_words) if total_words else 0
+        except (TypeError, ValueError) as err:
             _LOGGER.debug("Could not extract word count from task %s: %s", task.get("id"), err)
             return 0

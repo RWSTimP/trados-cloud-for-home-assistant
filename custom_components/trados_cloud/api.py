@@ -295,30 +295,85 @@ class TradosAPIClient:
             return data
         return []
 
+    async def get_project_source_files(self, project_id: str) -> tuple[list[dict[str, Any]], int]:
+        """Get source files for a specific project.
+        
+        Returns:
+            Tuple of (list of source files, number of API calls made)
+        """
+        _LOGGER.debug("Fetching source files for project %s", project_id)
+        
+        all_files = []
+        skip = 0
+        top = 100  # Max items per page
+        api_calls = 0
+        
+        while True:
+            params = {
+                "fields": "id,totalWords",
+                "top": top,
+                "skip": skip,
+            }
+            
+            try:
+                data = await self._make_request(
+                    "GET",
+                    f"/projects/{project_id}/source-files",
+                    params=params
+                )
+                api_calls += 1
+            except TradosAuthError:
+                # Retry once on auth error
+                data = await self._make_request(
+                    "GET",
+                    f"/projects/{project_id}/source-files",
+                    params=params
+                )
+                api_calls += 1
+            
+            items = data.get("items", [])
+            all_files.extend(items)
+            
+            item_count = data.get("itemCount", 0)
+            
+            # Check if we've retrieved all items
+            if len(all_files) >= item_count or len(items) < top:
+                break
+            
+            skip += top
+        
+        _LOGGER.debug("Fetched %s source files for project %s", len(all_files), project_id)
+        return all_files, api_calls
+
     async def get_assigned_tasks(self) -> list[dict[str, Any]]:
         """Get all tasks assigned to the authenticated user."""
         _LOGGER.debug("Fetching assigned tasks")
 
+        # Track API call count
+        api_call_count = 0
+        
         # Get tasks with pagination support
         all_tasks = []
         skip = 0
         top = 100  # Max items per page
 
         while True:
-            # Include fields parameter to get specific input fields and dueBy
+            # Include fields parameter to get project and source file IDs
             params = {
                 "top": top,
                 "skip": skip,
-                "fields": "status,taskType,input.type,input.targetFile.analysisStatistics,input.targetFile.sourceFile.totalWords,dueBy",
+                "fields": "status,taskType,project.id,inputFiles.targetFile.sourceFile.id,dueBy",
             }
 
             try:
                 data = await self._make_request("GET", "/tasks/assigned", params=params)
                 _LOGGER.debug("Response from /tasks/assigned (skip=%s): %s", skip, data)
+                api_call_count += 1
             except TradosAuthError:
                 # Retry once on auth error
                 data = await self._make_request("GET", "/tasks/assigned", params=params)
                 _LOGGER.debug("Response from /tasks/assigned (skip=%s, retry): %s", skip, data)
+                api_call_count += 1
 
             items = data.get("items", [])
             all_tasks.extend(items)
@@ -333,6 +388,56 @@ class TradosAPIClient:
             skip += top
 
         _LOGGER.info("Successfully fetched %s assigned tasks", len(all_tasks))
+        
+        # Extract unique project IDs from tasks
+        project_ids = set()
+        for task in all_tasks:
+            project = task.get("project", {})
+            project_id = project.get("id")
+            if project_id:
+                project_ids.add(project_id)
+        
+        _LOGGER.debug("Found %d unique projects", len(project_ids))
+        
+        # Fetch source files for each project and build word count mapping
+        word_count_map = {}  # (project_id, source_file_id) -> totalWords
+        
+        for project_id in project_ids:
+            try:
+                source_files, project_api_calls = await self.get_project_source_files(project_id)
+                api_call_count += project_api_calls
+                for sf in source_files:
+                    key = (project_id, sf.get("id"))
+                    word_count_map[key] = sf.get("totalWords", 0)
+                _LOGGER.debug("Fetched %d source files for project %s", len(source_files), project_id)
+            except TradosAPIError as err:
+                _LOGGER.warning("Failed to fetch source files for project %s: %s", project_id, err)
+        
+        # Enrich tasks with word counts
+        for task in all_tasks:
+            project_id = task.get("project", {}).get("id")
+            input_files = task.get("inputFiles", [])
+            
+            total_words = 0
+            for input_file in input_files:
+                target_file = input_file.get("targetFile", {})
+                source_file = target_file.get("sourceFile", {})
+                source_file_id = source_file.get("id")
+                
+                if project_id and source_file_id:
+                    key = (project_id, source_file_id)
+                    words = word_count_map.get(key, 0)
+                    total_words += words
+            
+            task["total_words"] = total_words
+        
+        _LOGGER.info(
+            "Fetched %d tasks from %d projects using %d API calls",
+            len(all_tasks),
+            len(project_ids),
+            api_call_count
+        )
+        
         return all_tasks
 
     async def test_connection(self) -> bool:
