@@ -42,7 +42,7 @@ class TradosDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             processed_data = self._process_tasks(tasks)
             
             # Detect new tasks and fire events
-            if self.data:  # Only if we have previous data to compare
+            if self.data is not None:  # Only if we have previous data to compare
                 old_task_ids = {t["id"] for t in self.data.get("tasks", [])}
                 new_task_ids = {t["id"] for t in processed_data["tasks"]}
                 newly_arrived = new_task_ids - old_task_ids

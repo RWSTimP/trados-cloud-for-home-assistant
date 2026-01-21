@@ -119,8 +119,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinators = []
     unsub_refreshes = []
-    auth_failures = 0
-    total_tenants = len(tenants)
 
     # Create a coordinator for each tenant
     for tenant in tenants:
@@ -146,25 +144,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             tenant_name=tenant.get("name"),
         )
 
-        try:
-            # Fetch initial data
-            await coordinator.async_config_entry_first_refresh()
-        except Exception as err:
-            # Check if this is an auth failure
-            if "Authentication failed" in str(err) or "No access token" in str(err):
-                auth_failures += 1
-                _LOGGER.warning(
-                    "Authentication failed for tenant %s: %s (will show as unavailable)",
-                    tenant.get("name"),
-                    err,
-                )
-            else:
-                _LOGGER.error("Failed to fetch initial data for tenant %s: %s", tenant.get("name"), err)
-            # Still add the coordinator so sensors exist (just unavailable)
-            coordinators.append(coordinator)
-            continue
-
-        # Successfully initialized - add coordinator and schedule refreshes
+        # Add coordinator - data will be fetched after platform setup
         coordinators.append(coordinator)
 
         # Schedule periodic refreshes
@@ -173,22 +153,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         unsub_refresh = async_track_time_interval(hass, _handle_refresh, scan_interval)
         unsub_refreshes.append(unsub_refresh)
-
-    # Check if ALL tenants failed authentication - only then trigger reauth
-    if auth_failures == total_tenants and total_tenants > 0:
-        _LOGGER.error(
-            "All %d tenant(s) failed authentication - triggering re-authentication",
-            total_tenants,
-        )
-        raise ConfigEntryAuthFailed(
-            "All tenants failed authentication. Please reconfigure the integration."
-        )
-    elif auth_failures > 0:
-        _LOGGER.warning(
-            "%d of %d tenant(s) failed authentication - they will show as unavailable",
-            auth_failures,
-            total_tenants,
-        )
 
     if not coordinators:
         _LOGGER.error("No coordinators were successfully created")
@@ -204,6 +168,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Set up platforms
     _LOGGER.debug("Setting up platforms: %s", PLATFORMS)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    
+    # Schedule initial data fetch for all coordinators as background tasks
+    # This happens AFTER platform setup to avoid blocking initialization
+    for coordinator in coordinators:
+        hass.async_create_task(
+            coordinator.async_config_entry_first_refresh(),
+            name=f"trados_cloud_{coordinator.client.tenant_id}_initial_refresh"
+        )
     
     # Register update listener (this is managed by entry.async_on_unload automatically)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))

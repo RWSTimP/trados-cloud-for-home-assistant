@@ -94,6 +94,11 @@ class TradosBaseSensor(CoordinatorEntity[TradosDataCoordinator], SensorEntity):
             "configuration_url": config_url,
         }
 
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success and self.coordinator.data is not None
+
 
 class TradosTotalTasksSensor(TradosBaseSensor):
     """Sensor for total assigned tasks."""
