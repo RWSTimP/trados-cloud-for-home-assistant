@@ -391,19 +391,6 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             progress_task=self._polling_task,
         )
 
-    async def async_step_reauth_progress(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Check progress of reauth task."""
-        if not self._reauth_task_done:
-            return self.async_show_progress(
-                step_id="reauth_authorize",
-                progress_action="reauth_progress",
-            )
-        
-        if self._reauth_task_success:
-            return self.async_show_progress_done(next_step_id="reauth_confirm")
-        
-        return self.async_show_progress_done(next_step_id="reauth_failed")
-
     async def async_poll_for_reauth_token(self) -> None:
         """Poll for reauth token - runs as background task."""
         max_attempts = 60
@@ -454,6 +441,19 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._reauth_task_done = True
         self._reauth_task_success = False
 
+    async def async_step_reauth_progress(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle reauth progress checking."""
+        if self._reauth_task_done:
+            if self._reauth_task_success:
+                return await self.async_step_reauth_confirm(user_input)
+            else:
+                return await self.async_step_reauth_failed(user_input)
+        
+        # Still waiting, keep showing progress
+        return await self.async_step_reauth_authorize(user_input)
+
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -482,7 +482,6 @@ class TradosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle failed reauth attempt."""
-        _LOGGER.error("Reauth failed, user needs to try again")
         return self.async_abort(reason="reauth_failed")
 
     async def async_step_finish(
