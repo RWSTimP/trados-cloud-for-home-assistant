@@ -7,7 +7,7 @@ Keep track of your Trados Cloud translation assignments directly from your Home 
 
 ## Overview
 
-This integration connects Home Assistant to the [Trados Cloud](https://www.rws.com/translation/trados/trados-cloud/) platform, providing real-time visibility into your translation task queue. It's designed for:
+This integration connects Home Assistant to the [Trados Cloud](https://www.trados.com/product/) platform, providing real-time visibility into your translation task queue. It's designed for:
 
 - **Freelance translators** managing assignments across multiple projects
 - **Translation project managers** monitoring team workload
