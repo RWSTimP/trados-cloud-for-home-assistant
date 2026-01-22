@@ -6,6 +6,7 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -48,6 +49,18 @@ async def async_setup_entry(
     
     # Create user-level aggregate sensors (sum across all tenants)
     if coordinators:
+        # Register the "All Inboxes" device as disabled by default
+        device_registry = dr.async_get(hass)
+        device_registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, f"{entry.entry_id}_user")},
+            name="All Inboxes",
+            manufacturer="RWS",
+            model="Trados Assignments Summary",
+            entry_type=dr.DeviceEntryType.SERVICE,
+            disabled_by=dr.DeviceEntryDisabler.INTEGRATION,
+        )
+        
         entities.extend([
             TradosUserTotalTasksSensor(coordinators, entry),
             TradosUserTasksByStatusSensor(coordinators, entry, "created", SENSOR_TASKS_CREATED),
